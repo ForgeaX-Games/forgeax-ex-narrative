@@ -1,0 +1,829 @@
+{
+  "schemaVersion": 2,
+  "id": "@forgeax-extension/narrative",
+  "version": "0.2.0",
+  "displayName": {
+    "zh": "叙事设计",
+    "en": "Narrative Studio"
+  },
+  "description": {
+    "zh": "AI 驱动的叙事工坊 · 双层路由(Tier + Mode)+ Planner 动态选步,覆盖 117 品类 / 11 个管线模板 / 20 席助手 / 6 种叙事原型,生成世界观→角色→剧情→对白的完整叙事;可查看故事树、单步重生成、导出结果。",
+    "en": "AI-driven narrative studio — two-layer routing (Tier + Mode) plus a dynamic planner over 117 genres, 11 pipeline templates, 20 assistant seats and 6 narrative archetypes, generating a full world to characters to plot to dialogue narrative; with a story-tree view, per-step regeneration and result export."
+  },
+  "icon": "BookOpen",
+  "consumes": {
+    "models": [
+      {
+        "channel": "text",
+        "role": "reasoning"
+      }
+    ]
+  },
+  "entry": {
+    "frontend": "./viz/dist/index.html",
+    "backend": "./server/tool-handlers.ts",
+    "standalone": {
+      "start": "npm run start",
+      "port": 8900,
+      "readyProbe": "/api/health",
+      "embeddedAlso": true
+    }
+  },
+  "permissions": [
+    "fs:read:.forgeax/games/{slug}/narrative/**",
+    "fs:write:.forgeax/games/{slug}/narrative/**",
+    "model:text:reasoning",
+    "net:generativelanguage.googleapis.com",
+    "emit:narrative.*"
+  ],
+  "requestedEnv": [
+    "GEMINI_API_KEY",
+    "LLM_PROXY_URL",
+    "LITELLM_PROXY_KEY",
+    "NARRATIVE_MODEL",
+    "SMALL_MODEL",
+    "NARRATIVE_PORT",
+    "NARRATIVE_AUTO_DEBUG",
+    "NARRATIVE_AGENT_DEBUG",
+    "NARRATIVE_DISABLE_EVAL",
+    "NARRATIVE_EMBED_URL",
+    "NARRATIVE_EMBED_MODEL",
+    "NARRATIVE_EMBED_DIM",
+    "NARRATIVE_EMBED_MODEL_DIR",
+    "NARRATIVE_EMBED_ONNX",
+    "FFMPEG_PATH",
+    "ASR_ENDPOINT",
+    "PDFTOPPM_PATH"
+  ],
+  "experimental": true,
+  "categories": [
+    "authoring"
+  ],
+  "contributes": {
+    "panelTypes": [
+      {
+        "id": "narrative.content",
+        "runtime": "iframe",
+        "entry": "./viz/dist/index.html"
+      }
+    ],
+    "pages": [
+      {
+        "id": "narrative",
+        "title": {
+          "zh": "叙事设计",
+          "en": "Narrative Studio"
+        },
+        "icon": "BookOpen",
+        "cardinality": "singleton",
+        "restorePolicy": "project",
+        "layout": {
+          "version": 2,
+          "root": {
+            "kind": "split",
+            "direction": "horizontal",
+            "sizes": [
+              320,
+              840
+            ],
+            "children": [
+              {
+                "kind": "tabs",
+                "placements": [
+                  "sidebar"
+                ],
+                "active": "sidebar"
+              },
+              {
+                "kind": "tabs",
+                "placements": [
+                  "workspace"
+                ],
+                "active": "workspace"
+              }
+            ]
+          }
+        },
+        "layoutVersion": 2,
+        "panels": [
+          {
+            "id": "sidebar",
+            "panelType": {
+              "extension": "self",
+              "id": "narrative.content"
+            },
+            "initialProps": {
+              "pane": "left",
+              "minWidth": 320,
+              "defaultWidth": 320,
+              "scrollable": true
+            }
+          },
+          {
+            "id": "workspace",
+            "panelType": {
+              "extension": "self",
+              "id": "narrative.content"
+            },
+            "initialProps": {
+              "pane": "center",
+              "minHeight": 600,
+              "scrollable": false
+            }
+          }
+        ],
+        "matchProduces": [
+          "**/*_narrative.md",
+          "**/dialog/**",
+          "**/*_branch_tree.json"
+        ]
+      }
+    ],
+    "activities": [
+      {
+        "id": "narrative.launcher",
+        "title": {
+          "zh": "叙事设计",
+          "en": "Narrative Studio"
+        },
+        "icon": "BookOpen",
+        "order": 140,
+        "category": "general",
+        "pageType": {
+          "extension": "self",
+          "id": "narrative"
+        }
+      }
+    ],
+    "skills": [
+      {
+        "id": "narrative:author-guide",
+        "entry": "./SKILL.md",
+        "trigger": "/narrative"
+      }
+    ],
+    "tools": [
+      {
+        "id": "narrative:start-pipeline",
+        "args": "./schemas/start-pipeline.args.json",
+        "returns": "./schemas/start-pipeline.returns.json",
+        "exposedToAI": true,
+        "description": {
+          "zh": "启动叙事管线 · 支持 117 品类 × 9 模板 · 自动 Tier/Mode 路由"
+        }
+      },
+      {
+        "id": "narrative:create-entry",
+        "args": "./schemas/create-entry.args.json",
+        "returns": "./schemas/create-entry.returns.json",
+        "exposedToAI": true,
+        "description": {
+          "zh": "建/改条目 · 与节点入口同一份 _entry.json · 先建条目再带 entryKey 开跑"
+        }
+      },
+      {
+        "id": "narrative:list-axes",
+        "args": "./schemas/list-axes.args.json",
+        "returns": "./schemas/list-axes.returns.json",
+        "exposedToAI": true,
+        "description": {
+          "zh": "三轴词表 · 叙事类型 / 题材 / 结构 · 填 storyType 与 storyTheme 前先查"
+        }
+      },
+      {
+        "id": "narrative:get-run-status",
+        "args": "./schemas/get-run-status.args.json",
+        "returns": "./schemas/get-run-status.returns.json",
+        "exposedToAI": true,
+        "description": {
+          "zh": "查询管线运行状态 · 步骤进度 · 结果获取"
+        }
+      },
+      {
+        "id": "narrative:list-runs",
+        "args": "./schemas/list-runs.args.json",
+        "returns": "./schemas/list-runs.returns.json",
+        "exposedToAI": true,
+        "description": {
+          "zh": "列出历史运行记录 · 支持断点续跑与分叉重生成"
+        }
+      },
+      {
+        "id": "narrative:list-teams",
+        "args": "./schemas/list-teams.args.json",
+        "returns": "./schemas/list-teams.returns.json",
+        "exposedToAI": true,
+        "description": {
+          "zh": "列出自定义专属创作团队 · 单本模板助手与作家创作顾问 · 只有 ready 的能带进生成"
+        }
+      },
+      {
+        "id": "narrative:get-team",
+        "args": "./schemas/get-team.args.json",
+        "returns": "./schemas/get-team.returns.json",
+        "exposedToAI": true,
+        "description": {
+          "zh": "查看某个专属团队 · 蒸馏状态与风格签名 / 禁区 / 各席位技能"
+        }
+      },
+      {
+        "id": "narrative:list-assets",
+        "args": "./schemas/list-assets.args.json",
+        "returns": "./schemas/list-assets.returns.json",
+        "exposedToAI": true,
+        "description": {
+          "zh": "列出某条目里作者已确认为定稿的产物 · 下游生成只引用这张表里的文件"
+        }
+      },
+      {
+        "id": "narrative:confirm-asset",
+        "args": "./schemas/confirm-asset.args.json",
+        "returns": "./schemas/confirm-asset.returns.json",
+        "exposedToAI": true,
+        "description": {
+          "zh": "确认或撤销确认一份产物 · 可钉住版本号（缺省跟随最新）"
+        }
+      },
+      {
+        "id": "narrative:export-result",
+        "args": "./schemas/export-result.args.json",
+        "returns": "./schemas/export-result.returns.json",
+        "exposedToAI": true,
+        "description": {
+          "zh": "导出叙事结果到项目目录"
+        }
+      },
+      {
+        "id": "narrative:cancel-run",
+        "args": "./schemas/cancel-run.args.json",
+        "returns": "./schemas/cancel-run.returns.json",
+        "exposedToAI": true,
+        "description": {
+          "zh": "取消/暂停正在运行的管线 · 已跑完的步保留断点，随后可用 resume-pipeline 续跑"
+        }
+      },
+      {
+        "id": "narrative:regenerate-step",
+        "args": "./schemas/regenerate-step.args.json",
+        "returns": "./schemas/regenerate-step.returns.json",
+        "exposedToAI": true,
+        "description": {
+          "zh": "重生成指定步骤 · 支持用户指令注入与节点级过滤"
+        }
+      },
+      {
+        "id": "narrative:save-step-edit",
+        "exposedToAI": true,
+        "description": {
+          "zh": "改稿落盘 · 与界面文本视图保存同一端点 · 原稿自动存 _original/ 供还原 · 省略 editedContent 只回读不写盘"
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "sourceDir": { "type": "string" },
+            "stepId": { "type": "string" },
+            "nodeId": { "type": "string" },
+            "editedContent": { "description": "省略则只回读当前内容、不写盘" },
+            "userInput": { "type": "string", "description": "这一改的说明/意图，供后续影响面分析与重新生成参考" }
+          },
+          "required": ["sourceDir", "stepId"]
+        },
+        "returns": {
+          "type": "object",
+          "properties": {
+            "ok": { "type": "boolean" },
+            "stepId": { "type": "string" },
+            "nodeId": { "type": "string" },
+            "originalContent": {},
+            "persisted": { "type": "boolean" }
+          }
+        }
+      },
+      {
+        "id": "narrative:restore-original",
+        "exposedToAI": true,
+        "description": {
+          "zh": "把某一步(或某个节点)的内容还原为模型原稿，撤掉编辑账本里那一条 · 没存过原稿则报错"
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "sourceDir": { "type": "string" },
+            "stepId": { "type": "string" },
+            "nodeId": { "type": "string" }
+          },
+          "required": ["sourceDir", "stepId"]
+        },
+        "returns": {
+          "type": "object",
+          "properties": {
+            "ok": { "type": "boolean" },
+            "stepId": { "type": "string" },
+            "nodeId": { "type": "string" },
+            "restoredContent": {}
+          }
+        }
+      },
+      {
+        "id": "narrative:run-seat",
+        "exposedToAI": true,
+        "description": {
+          "zh": "按席位 id 单独跑一个叙事单品助手(二十席之一) · 不遍历全管线 · 给 entryKey 可并入该条目落盘供后续管线消费"
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "seatId": {
+              "type": "string",
+              "description": "席位 id(先用 narrative:list-seats 查有哪些席、canRunStandalone 是否为真)，也接受直接传 step id"
+            },
+            "userInput": { "type": "string" },
+            "ctx": {
+              "type": "object",
+              "description": "补齐/覆盖上下文字段，如上游席位的产出"
+            },
+            "inputs": {
+              "type": "object",
+              "description": "覆盖/追加输入字段，写入后再校验 requiredInputs"
+            },
+            "model": { "type": "string" },
+            "entryKey": {
+              "type": "string",
+              "description": "绑定到某条目并落盘(G2)；不给则只在响应体里回结果，不落盘"
+            }
+          },
+          "required": ["seatId"]
+        },
+        "returns": {
+          "type": "object",
+          "properties": {
+            "agentId": { "type": "string", "description": "实际执行的 AgentDef id(单步席解析到 step，多步席解析到 composite 外壳)" },
+            "requestedId": { "type": "string", "description": "仅当传入的 seatId 与 agentId 不同时返回" },
+            "outputField": { "type": "string" },
+            "output": {},
+            "entryKey": { "type": "string" },
+            "sourceDir": { "type": "string" }
+          }
+        }
+      },
+      {
+        "id": "narrative:list-genres",
+        "exposedToAI": true,
+        "description": {
+          "zh": "列出全部游戏品类(按大类分组,含 code/名称/tier/叙事比重/模板),选 genreCode 前先查"
+        },
+        "args": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      {
+        "id": "narrative:list-modes",
+        "exposedToAI": true,
+        "description": {
+          "zh": "列出各 tier 可用的运行模式/模板及步骤数"
+        },
+        "args": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      {
+        "id": "narrative:list-seats",
+        "exposedToAI": true,
+        "description": {
+          "zh": "列出全部二十席叙事单品助手 · id/名称/kind/是否能被单独调用(canRunStandalone)/单跑前还缺什么输入"
+        },
+        "args": {
+          "type": "object",
+          "properties": {}
+        },
+        "returns": {
+          "type": "object",
+          "properties": {
+            "seats": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": { "type": "string" },
+                  "featureId": { "type": "string" },
+                  "name": { "type": "string" },
+                  "kind": { "type": "string" },
+                  "status": { "type": "string" },
+                  "contentType": { "type": ["string", "null"] },
+                  "canRunStandalone": { "type": "boolean" },
+                  "runnableAgentId": { "type": "string" },
+                  "requiredInputs": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "narrative:list-files",
+        "exposedToAI": true,
+        "description": {
+          "zh": "列出某次运行(runId 或输出目录名)的全部产出文件"
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "runId": {
+              "type": "string",
+              "description": "运行 id 或输出目录名"
+            }
+          },
+          "required": [
+            "runId"
+          ]
+        }
+      },
+      {
+        "id": "narrative:read-file",
+        "exposedToAI": true,
+        "description": {
+          "zh": "读取某次运行下指定相对路径的产出文件内容(json/文本,自动截断防爆上下文)"
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "runId": {
+              "type": "string",
+              "description": "运行 id 或输出目录名"
+            },
+            "filePath": {
+              "type": "string",
+              "description": "相对该运行目录的文件路径,如 narrative.md / characters/hero.md"
+            }
+          },
+          "required": [
+            "runId",
+            "filePath"
+          ]
+        }
+      },
+      {
+        "id": "narrative:get-story-tree",
+        "exposedToAI": true,
+        "description": {
+          "zh": "读取某次运行的叙事树结构(分层节点),用于把握整体故事骨架"
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "dir": {
+              "type": "string",
+              "description": "运行输出目录名(checkpoint 所在)"
+            }
+          },
+          "required": [
+            "dir"
+          ]
+        }
+      },
+      {
+        "id": "narrative:get-pipeline-nodes",
+        "exposedToAI": true,
+        "description": {
+          "zh": "读取正在运行的管线各步骤节点及状态(仅对内存中活动 run 有效)"
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "runId": {
+              "type": "string",
+              "description": "活动运行 id"
+            }
+          },
+          "required": [
+            "runId"
+          ]
+        }
+      },
+      {
+        "id": "narrative:load-history",
+        "exposedToAI": true,
+        "description": {
+          "zh": "加载某条历史运行记录的详情(拿到 tier/mode/result 及目录名,供后续续跑/编辑)"
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "key": {
+              "type": "string",
+              "description": "历史记录 key(来自 list-runs)"
+            }
+          },
+          "required": [
+            "key"
+          ]
+        }
+      },
+      {
+        "id": "narrative:resume-pipeline",
+        "exposedToAI": true,
+        "requireConfirm": "always",
+        "description": {
+          "zh": "从 checkpoint 断点续跑某次未完成的运行(写入同一目录)"
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "dir": {
+              "type": "string",
+              "description": "运行输出目录名(含 checkpoint)"
+            },
+            "model": {
+              "type": "string",
+              "description": "可选,覆盖默认 LLM 模型"
+            }
+          },
+          "required": [
+            "dir"
+          ]
+        }
+      },
+      {
+        "id": "narrative:get-stale-steps",
+        "exposedToAI": true,
+        "description": {
+          "zh": "给定起始步骤,返回会因其变更而过期、需重生成的下游步骤与字段"
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "sourceDir": {
+              "type": "string",
+              "description": "运行输出目录名"
+            },
+            "fromStepId": {
+              "type": "string",
+              "description": "起始步骤 id"
+            }
+          },
+          "required": [
+            "sourceDir",
+            "fromStepId"
+          ]
+        }
+      },
+      {
+        "id": "narrative:analyze-impact",
+        "exposedToAI": true,
+        "description": {
+          "zh": "重生成前预判:对若干节点的拟改动做差异+影响分析,返回受影响范围"
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "sourceDir": {
+              "type": "string",
+              "description": "运行输出目录名"
+            },
+            "modifications": {
+              "type": "array",
+              "description": "拟改动列表",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "stepId": {
+                    "type": "string"
+                  },
+                  "nodeId": {
+                    "type": "string"
+                  },
+                  "editedContent": {
+                    "description": "改后的内容(任意结构)"
+                  },
+                  "userInput": {
+                    "type": "string",
+                    "description": "自然语言改动说明"
+                  }
+                },
+                "required": [
+                  "stepId"
+                ]
+              }
+            }
+          },
+          "required": [
+            "sourceDir",
+            "modifications"
+          ]
+        }
+      },
+      {
+        "id": "narrative:get-review",
+        "exposedToAI": true,
+        "description": {
+          "zh": "读取某次运行的评审状态(各步骤 approved/rejected/反馈)"
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "dir": {
+              "type": "string",
+              "description": "运行输出目录名"
+            }
+          },
+          "required": [
+            "dir"
+          ]
+        }
+      },
+      {
+        "id": "narrative:set-review",
+        "exposedToAI": true,
+        "description": {
+          "zh": "标记某步骤的评审结论(approved/rejected/pending)并附反馈"
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "dir": {
+              "type": "string",
+              "description": "运行输出目录名"
+            },
+            "stepId": {
+              "type": "string",
+              "description": "步骤 id"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "approved",
+                "rejected"
+              ],
+              "description": "评审结论"
+            },
+            "feedback": {
+              "type": "string",
+              "description": "可选,评审反馈"
+            },
+            "regenerateRunId": {
+              "type": "string",
+              "description": "可选,关联的重生成 run id"
+            }
+          },
+          "required": [
+            "dir",
+            "stepId",
+            "status"
+          ]
+        }
+      },
+      {
+        "id": "narrative:ip-dna-start",
+        "exposedToAI": true,
+        "requireConfirm": "always",
+        "description": {
+          "zh": "IP DNA 端到端入口(蓝图§5):上传/指定全模态 IP 文件 → 理解 → 改编 → (可选)全品类游戏叙事生成。可能较久,默认仅产出 IP DNA+改编指令+生成输入"
+        },
+        "args": "./schemas/ip-dna-start.args.json",
+        "returns": "./schemas/ip-dna-start.returns.json"
+      },
+      {
+        "id": "narrative:get-ip-dna",
+        "exposedToAI": true,
+        "description": {
+          "zh": "只读:按 runId 读取 IP DNA 层级树摘要(节点/层级/标题),用于审阅与可视化"
+        },
+        "args": "./schemas/get-ip-dna.args.json",
+        "returns": "./schemas/get-ip-dna.returns.json"
+      },
+      {
+        "id": "narrative:ip-dna-analyze-impact",
+        "exposedToAI": true,
+        "description": {
+          "zh": "IP DNA 改写影响面分析(蓝图§10/§15):给定改动字段,沿 data-atlas 推导受影响下游与输入层级节点"
+        },
+        "args": "./schemas/ip-dna-analyze-impact.args.json",
+        "returns": "./schemas/ip-dna-analyze-impact.returns.json"
+      },
+      {
+        "id": "narrative:ip-dna-ingest",
+        "exposedToAI": true,
+        "description": {
+          "zh": "IP 半自动阶段门①(§5.1):摄入+标准化+建树(含干扰项过滤),停在确认裁剪范围前。返回层级树骨架+体量/拆解建议+默认裁剪/单元/维度"
+        },
+        "args": "./schemas/ip-dna-ingest.args.json",
+        "returns": "./schemas/ip-dna-ingest.returns.json"
+      },
+      {
+        "id": "narrative:ip-dna-get-hierarchy",
+        "exposedToAI": true,
+        "description": {
+          "zh": "只读:摄入后的层级树 + 默认裁剪/单元/维度 + 体量,供确认裁剪范围引导(半自动/agent 共用)"
+        },
+        "args": "./schemas/ip-dna-get-hierarchy.args.json",
+        "returns": "./schemas/ip-dna-get-hierarchy.returns.json"
+      },
+      {
+        "id": "narrative:ip-dna-decompose",
+        "exposedToAI": true,
+        "description": {
+          "zh": "IP 半自动(§5 步骤6-10):体量超线时按标记/单元闭环拆解→再标准化→重写骨架层级树"
+        },
+        "args": "./schemas/ip-dna-decompose.args.json",
+        "returns": "./schemas/ip-dna-decompose.returns.json"
+      },
+      {
+        "id": "narrative:ip-dna-confirm-scope",
+        "exposedToAI": true,
+        "description": {
+          "zh": "确认裁剪范围(§4.4 第①步):回填嵌套层级选择;缺省=全量。确认门终点"
+        },
+        "args": "./schemas/ip-dna-confirm-scope.args.json",
+        "returns": "./schemas/ip-dna-confirm-scope.returns.json"
+      },
+      {
+        "id": "narrative:ip-dna-confirm-units",
+        "exposedToAI": true,
+        "description": {
+          "zh": "确认游戏单元 + 改编维度(§4.4 第②③步):回填 game_unit_plan/adaptation_dimensions/mode"
+        },
+        "args": "./schemas/ip-dna-confirm-units.args.json",
+        "returns": "./schemas/ip-dna-confirm-units.returns.json"
+      },
+      {
+        "id": "narrative:ip-dna-extract",
+        "exposedToAI": true,
+        "description": {
+          "zh": "生成 scoped IP DNA(§5 步骤4):仅提取不跑下游生成,消费已确认裁剪范围/单元/维度"
+        },
+        "args": "./schemas/ip-dna-extract.args.json",
+        "returns": "./schemas/ip-dna-extract.returns.json"
+      },
+      {
+        "id": "narrative:ip-dna-generate",
+        "exposedToAI": true,
+        "requireConfirm": "always",
+        "description": {
+          "zh": "开始生成(§5 步骤4→5):提取(=生成 scoped IP DNA)+下游叙事生成自动串跑。改编范围确认后触发,中途不暂停"
+        },
+        "args": "./schemas/ip-dna-generate.args.json",
+        "returns": "./schemas/ip-dna-generate.returns.json"
+      },
+      {
+        "id": "narrative:ip-dna-get-job",
+        "exposedToAI": true,
+        "description": {
+          "zh": "轮询异步任务(ingest/extract/generate)的状态/进度/结果"
+        },
+        "args": "./schemas/ip-dna-get-job.args.json",
+        "returns": "./schemas/ip-dna-get-job.returns.json"
+      },
+      {
+        "id": "narrative:ip-dna-cancel",
+        "exposedToAI": true,
+        "description": {
+          "zh": "取消生产(§5.1):取消正在运行的 IP DNA 异步任务(与前端「取消生成」按钮能力对等)"
+        },
+        "args": "./schemas/ip-dna-cancel.args.json",
+        "returns": "./schemas/ip-dna-cancel.returns.json"
+      }
+    ],
+    "surfaces": [
+      {
+        "id": "narrative.control",
+        "schema": "./schemas/surface-control.schema.json",
+        "actions": [
+          {
+            "id": "start",
+            "exposedToAI": true
+          },
+          {
+            "id": "cancel",
+            "exposedToAI": true
+          },
+          {
+            "id": "load-history",
+            "exposedToAI": true
+          }
+        ]
+      },
+      {
+        "id": "narrative.pipeline",
+        "schema": "./schemas/surface-pipeline.schema.json",
+        "actions": [
+          {
+            "id": "regenerate",
+            "exposedToAI": true,
+            "requireConfirm": "always"
+          },
+          {
+            "id": "export",
+            "exposedToAI": true
+          },
+          {
+            "id": "focus-step",
+            "exposedToAI": false
+          }
+        ]
+      }
+    ]
+  }
+}

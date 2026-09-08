@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["id", "status"],
+  "additionalProperties": true,
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Run ID for status polling (e.g. 'run_1716621234567_a1b2')"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["running"],
+      "description": "Always 'running' on successful start"
+    },
+    "message": {
+      "type": "string"
+    },
+    "tier": {
+      "type": "string",
+      "enum": ["tier1", "tier2", "tier3", "tier4"]
+    },
+    "mode": {
+      "type": "string"
+    },
+    "sourceDir": {
+      "type": "string",
+      "description": "Output directory name (timestamp-based) for this run"
+    }
+  }
+}

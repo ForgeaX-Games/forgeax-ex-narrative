@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["changed", "affectedDownstream", "upstreamSources", "affectedInputNodes", "notes"],
+  "additionalProperties": true,
+  "description": "改写影响面分析（蓝图 §10/§15）：沿 data-atlas 推导受影响下游产物与输入侧层级节点。",
+  "properties": {
+    "runId": { "type": ["string", "null"], "description": "IP DNA 运行 id(无则为 null)" },
+    "changed": { "type": "array", "items": { "type": "string" }, "description": "直接改动的字段 key" },
+    "affectedDownstream": { "type": "array", "items": { "type": "string" }, "description": "受影响的下游产物 key(需重生成)" },
+    "upstreamSources": { "type": "array", "items": { "type": "string" }, "description": "改动字段的全部上游来源 key(溯源/取证)" },
+    "affectedInputNodes": { "type": "array", "items": { "type": "string" }, "description": "受影响的输入侧层级节点 id(仅已改编/已生成节点)" },
+    "notes": { "type": "array", "items": { "type": "string" }, "description": "人类可读的影响说明" }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["id", "status"],
+  "additionalProperties": true,
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["running", "completed", "failed"]
+    },
+    "progress": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "stepId": { "type": "string" },
+          "label": { "type": "string" },
+          "status": { "type": "string", "enum": ["pending", "running", "completed", "failed"] }
+        }
+      },
+      "description": "Step-level progress entries"
+    },
+    "error": {
+      "type": "string",
+      "description": "Error message when status is 'failed'"
+    },
+    "startedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "tier": { "type": "string" },
+    "mode": { "type": "string" },
+    "result": {
+      "type": "object",
+      "description": "Full NarrativeContext when includeResult=true and status=completed"
+    },
+    "controls": {
+      "type": "object",
+      "description": "Action-guard layer: same primary/cancel computation the canvas uses (pipelineGuards()), so chat can know what actions are currently valid without reading a canvas broadcast.",
+      "properties": {
+        "state": { "type": "string", "enum": ["pending", "running", "paused", "interrupted", "completed"] },
+        "cancelEnabled": { "type": "boolean" },
+        "primary": { "type": "string", "enum": ["start", "resume", "regen", "none"] },
+        "canResume": { "type": "boolean" },
+        "canRegenerate": { "type": "boolean" }
+      }
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": true,
+  "description": "层级树 + 默认裁剪/单元/维度 + 体量 + 已确认态。",
+  "properties": {
+    "story_timestamp": { "type": "string" },
+    "run_id": { "type": "string" },
+    "title": { "type": "string" },
+    "media_type": { "type": "string" },
+    "node_count": { "type": "number" },
+    "hierarchy": { "type": "array", "description": "层级节点摘要" },
+    "volume": { "type": "object", "description": "体量水准线评估" },
+    "default_scope": { "type": "object" },
+    "default_game_unit_plan": { "type": "object" },
+    "default_dimensions": { "type": "object" },
+    "confirmation": { "type": "object", "description": "已回填的确认态(scope/units/dimensions)" }
+  }
+}

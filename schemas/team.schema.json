@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Custom creative team",
+  "type": "object",
+  "required": ["id", "kind", "source", "displayName", "status"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Pass this as start-pipeline.teamId. Only ids with status 'ready' take effect."
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["book_template", "author_advisor"],
+      "description": "book_template = distilled from one book (reproduces its bones and voice); author_advisor = distilled across an author's works (their method, not one book's structure)."
+    },
+    "source": {
+      "type": "string",
+      "description": "Book title for book_template, author name for author_advisor."
+    },
+    "displayName": { "type": "string" },
+    "books": {
+      "type": "array",
+      "description": "User-declared book groups. Grouping is declared, never inferred.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "bookUid": { "type": "string" },
+          "title": { "type": "string" },
+          "files": { "type": "array", "items": { "type": "string" } },
+          "ipDnaRunId": {
+            "type": ["string", "null"],
+            "description": "Run key of the IP DNA extraction behind this book, when it has been distilled."
+          }
+        }
+      }
+    },
+    "authorMaterials": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Author's own material (interviews, craft notes) uploaded by the user; author_advisor only."
+    },
+    "useEncyclopedia": {
+      "type": "boolean",
+      "description": "Whether the author's public record is retrieved for distillation (the encyclopedia seat)."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "distilling", "ready", "failed"],
+      "description": "draft = material registered, not distilled; distilling = running; ready = usable; failed = see errorMessage."
+    },
+    "errorMessage": { "type": ["string", "null"] },
+    "profile": {
+      "type": ["object", "null"],
+      "description": "Distillation output; present only when status is 'ready'.",
+      "properties": {
+        "displayName": { "type": "string" },
+        "summary": { "type": "string" },
+        "signatureTraits": { "type": "array", "items": { "type": "string" } },
+        "taboos": { "type": "array", "items": { "type": "string" } },
+        "structureTemplate": { "type": "string" },
+        "methodology": { "type": "string" },
+        "stageSkills": {
+          "type": "object",
+          "description": "Seat id → the skill text injected into that seat's prompt.",
+          "additionalProperties": { "type": "string" }
+        },
+        "operatorUids": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "createdAt": { "type": "string" },
+    "updatedAt": { "type": "string" }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["runId"],
+  "additionalProperties": false,
+  "description": "只读层级树 + 默认裁剪/单元/维度 + 体量(供确认裁剪范围引导)。",
+  "properties": {
+    "runId": { "type": "string", "description": "运行 id(=时间戳_故事名)" }
+  }
+}

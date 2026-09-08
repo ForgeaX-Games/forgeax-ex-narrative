@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["story_id", "title", "node_count", "hierarchy"],
+  "additionalProperties": true,
+  "description": "只读返回 IP DNA 层级树摘要（节点/层级/标题），用于审阅与可视化（蓝图 §10）。",
+  "properties": {
+    "story_id": { "type": "string", "description": "故事主键(story_timestamp)" },
+    "title": { "type": "string", "description": "故事标题" },
+    "media_type": { "type": "string", "enum": ["book", "comic", "video", "picture", "mixed"], "description": "输入媒体类型" },
+    "node_count": { "type": "number", "description": "层级树节点总数" },
+    "hierarchy": {
+      "type": "array",
+      "description": "层级节点摘要（媒体无关四层抽象：complete/part/chapter/unit）",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "节点 id" },
+          "levelType": { "type": "string", "enum": ["complete", "part", "chapter", "unit"], "description": "层级类型" },
+          "index": { "type": "number", "description": "同层序号" },
+          "title": { "type": "string", "description": "节点标题" },
+          "parent": { "type": ["string", "null"], "description": "父节点 id(根为 null)" },
+          "childRange": { "description": "子节点区间(可选)" }
+        }
+      }
+    }
+  }
+}

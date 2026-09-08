@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": true,
+  "description": "拆解结果:是否拆解 + 块数 + 闭环统计 + 更新后的层级树。",
+  "properties": {
+    "run_id": { "type": "string" },
+    "decomposed": { "type": "boolean", "description": "是否真正拆成多块" },
+    "chunk_count": { "type": "number", "description": "拆解块数" },
+    "closure": { "type": "object", "description": "单元级拆解闭环统计" },
+    "node_count": { "type": "number" },
+    "hierarchy": { "type": "array", "description": "更新后的层级节点摘要" }
+  }
+}

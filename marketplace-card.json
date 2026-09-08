@@ -1,0 +1,74 @@
+{
+  "summary": {
+    "zh": "叙事工坊,AI 驱动的游戏叙事内容生成管线。它用 Tier + Mode 双层路由 + Planner 动态选步,自动适配不同品类的叙事深度,覆盖 117 个品类、11 个管线模板、20 席助手、29 种执行模式、6 种叙事原型,生成世界观→角色→剧情→对白的完整叙事。除从需求生成外,还支持 IP DNA 改编:上传已有小说/漫画/视频作品,标准化建树后提取叙事 DNA 并复用同一套管线改编成可玩叙事。可视化故事树、单步重新生成、查看运行状态与导出结果,并能把产出对接到 Kotone 的剧情产物。",
+    "en": "The Narrative Studio narrative runtime — an AI-driven game-narrative generation pipeline. Using two-layer Tier + Mode routing plus a dynamic planner, it adapts narrative depth per genre across 117 genres, 11 pipeline templates, 20 assistant seats, 29 execution modes and 6 narrative archetypes, generating a full world→characters→plot→dialogue narrative. Besides generating from a prompt, it also supports IP-DNA adaptation: upload an existing novel/comic/video, standardize it into a hierarchy, extract its narrative DNA and reuse the same pipeline to adapt it into playable narrative. It offers a story-tree view, per-step regeneration, run-status tracking and result export, and connects its output to Kotone's narrative artifacts."
+  },
+  "sections": [
+    {
+      "title": {
+        "zh": "管线",
+        "en": "Pipeline"
+      },
+      "body": {
+        "zh": "Tier + Mode 双层路由 + Planner 动态选步\n117 品类 / 9 模板 / 6 叙事原型",
+        "en": "Two-layer Tier + Mode routing + dynamic planner\n117 genres / 9 templates / 6 archetypes"
+      }
+    },
+    {
+      "title": {
+        "zh": "IP DNA 改编",
+        "en": "IP-DNA adaptation"
+      },
+      "body": {
+        "zh": "上传已有小说/漫画/视频作品\n标准化建树 → 提取叙事 DNA → 复用管线改编",
+        "en": "Upload an existing novel/comic/video\nstandardize → extract narrative DNA → adapt via the same pipeline"
+      }
+    },
+    {
+      "title": {
+        "zh": "能力",
+        "en": "Capabilities"
+      },
+      "body": {
+        "zh": "故事树可视化 · 单步重生成 · 运行状态 · 导出结果",
+        "en": "story tree · per-step regen · run status · export"
+      }
+    },
+    {
+      "title": {
+        "zh": "怎么用",
+        "en": "How to use"
+      },
+      "body": {
+        "zh": "面板管理启用 → 打开「narrative」面板或对话 /narrative",
+        "en": "Enable in Admin → open 'narrative' or type /narrative"
+      }
+    }
+  ],
+  "history": [
+    {
+      "version": "0.1.0",
+      "date": "2026-05-22",
+      "notes": {
+        "zh": "首版:叙事生成管线",
+        "en": "First release: narrative pipeline"
+      }
+    },
+    {
+      "version": null,
+      "date": "2026-06-20",
+      "notes": {
+        "zh": "双层路由与可视化完善",
+        "en": "Tier/mode routing + visualization"
+      }
+    },
+    {
+      "version": null,
+      "date": "2026-06-30",
+      "notes": {
+        "zh": "新增 IP DNA 改编:多模态输入标准化建树 + 叙事 DNA 提取",
+        "en": "Added IP-DNA adaptation: multimodal input standardization + narrative-DNA extraction"
+      }
+    }
+  ]
+}

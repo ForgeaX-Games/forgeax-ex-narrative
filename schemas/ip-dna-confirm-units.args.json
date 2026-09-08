@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["runId"],
+  "additionalProperties": false,
+  "description": "确认游戏单元 + 改编维度(§4.4 第②③步);缺省=默认切分+全维度。",
+  "properties": {
+    "runId": { "type": "string", "description": "运行 id(=时间戳_故事名)" },
+    "gameUnitPlan": {
+      "type": "object",
+      "description": "用户精确选填的游戏单元规划(§4.4 第②步);提供则优先采用并直接生成 N 个游戏单元,覆盖默认切分。契约:一行/一部=一个游戏单元(1:1),units 数即游戏单元数。",
+      "required": ["mode", "units"],
+      "properties": {
+        "mode": { "type": "string", "enum": ["single", "series"], "description": "single=单游戏单元(整部);series=多游戏单元(部=单元)。units 数>=2 时为 series" },
+        "units": {
+          "type": "array",
+          "description": "游戏单元数组(行→单元 1:1,文档序)",
+          "items": {
+            "type": "object",
+            "required": ["index", "unitRange", "boundary"],
+            "properties": {
+              "index": { "type": "number", "description": "单元序号(从 1 起)" },
+              "partId": { "type": "string", "description": "该单元对应的部/顶层节点 id(可选)" },
+              "unitRange": {
+                "type": "object",
+                "required": ["start", "end"],
+                "properties": {
+                  "start": { "type": "string", "description": "该单元子树首个最小叙事单元(叶)id" },
+                  "end": { "type": "string", "description": "该单元子树末个最小叙事单元(叶)id" }
+                },
+                "description": "连续最小叙事单元区间[start,end](文档序)"
+              },
+              "boundary": { "type": "string", "enum": ["hard", "soft"], "description": "边界硬度:部/卷/册=hard,章=soft" },
+              "targetComplexity": { "type": "number", "description": "目标复杂度(可选)" },
+              "targetNodeCount": { "type": "number", "description": "目标节点数(可选,建议~25,非硬限)" }
+            }
+          }
+        },
+        "userSpecified": { "type": "boolean", "description": "是否用户精确指定(覆盖默认体量/软硬边界)。前端按行规划时应为 true" }
+      }
+    },
+    "adaptationDimensions": { "type": "object", "description": "改编维度(叙事层级数+模板字段);缺省=全维度模板" },
+    "mode": { "type": "string", "enum": ["single", "series"], "description": "完整游戏模式(仅在不传 gameUnitPlan 时按默认切分参考)" },
+    "targetUnits": { "type": "number", "description": "默认切分时'每游戏单元最小单元数'(默认 25,非游戏单元个数);传 gameUnitPlan 时忽略" }
+  }
+}

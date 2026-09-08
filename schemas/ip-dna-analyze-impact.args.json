@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["runId", "changedKeys"],
+  "additionalProperties": false,
+  "properties": {
+    "runId": { "type": "string", "description": "IP DNA 运行 id" },
+    "changedKeys": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" },
+      "description": "拟改动的 data-atlas 字段键列表(如 ['A.characters'])"
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["id", "status"],
+  "additionalProperties": true,
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "New run ID (prefixed with 'regen_')"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["running"]
+    },
+    "message": {
+      "type": "string"
+    },
+    "sourceDir": {
+      "type": "string",
+      "description": "Original source directory"
+    },
+    "newEntryKey": {
+      "type": "string",
+      "description": "New output directory for regenerated content"
+    },
+    "fromStepId": {
+      "type": "string"
+    },
+    "staleSteps": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Steps downstream of fromStepId that will be regenerated"
+    },
+    "tier": { "type": "string" },
+    "mode": { "type": "string" },
+    "parentKey": {
+      "type": "string",
+      "description": "Source run key this was forked from"
+    }
+  }
+}

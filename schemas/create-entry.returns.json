@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "key",
+    "status"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "key": {
+      "type": "string",
+      "description": "Pass this to narrative:start-pipeline as entryKey."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "config"
+      ]
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "The merged entry record as persisted. Repeat calls with the same key merge rather than overwrite, and createdAt is preserved."
+    }
+  }
+}

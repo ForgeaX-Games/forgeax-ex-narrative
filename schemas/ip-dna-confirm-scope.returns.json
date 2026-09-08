@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": true,
+  "description": "确认裁剪范围后的确认态回执。",
+  "properties": {
+    "run_id": { "type": "string" },
+    "confirmation": { "type": "object", "description": "已回填的确认态" },
+    "awaiting": { "type": "string", "description": "下一步动作(confirm-units)" }
+  }
+}

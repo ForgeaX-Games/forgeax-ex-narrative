@@ -1,0 +1,25 @@
+node_modules/
+dist/
+output/
+output_*.json
+.env
+viz/node_modules/
+viz/dist/
+*.tsbuildinfo
+sync.sh
+bun.lock
+
+# 大数据/运行产物：不进 git
+# knowledge_base 含 embeddings/语料(单文件>100MB 超 GitHub 上限)，分发策略(git-lfs/release)另议
+knowledge_base/
+# 只忽略仓根的 input/（IP 素材投放口）。
+# 不加前导斜杠会匹配任意层级的 input/ 目录——曾因此把
+# viz/src/components/input/RequirementInputPanel.tsx 静默吞掉：
+# 本地能跑，推上去别人构建即断在找不到该模块。
+/input/
+# 用户自建的项目库（一文件一项目）：是运行时数据，不是代码。
+# 同样加前导斜杠，只忽略仓根那一个，别把将来某处的 projects/ 源码目录静默吞掉。
+/projects/
+.ipdna-jobs/
+_tmp_*.ts
+_tmp_*.mjs

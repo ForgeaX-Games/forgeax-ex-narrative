@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "key"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "key": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Entry key, used verbatim as the output directory name. Must be a safe relative directory name (no slashes, no '..')."
+    },
+    "inputType": {
+      "type": "string",
+      "enum": [
+        "text",
+        "tags",
+        "works"
+      ],
+      "description": "How the requirement was given: free text, tag selection, or uploaded works. Recorded so the task panel can show what the author actually submitted."
+    },
+    "userInput": {
+      "type": "string",
+      "description": "The requirement text for this entry."
+    },
+    "tags": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Raw tag selections when inputType is 'tags': { selections, customTexts }. Not used for routing, recorded for restore."
+    },
+    "routeGroup": {
+      "type": "string",
+      "enum": [
+        "planning",
+        "narrative"
+      ]
+    },
+    "tier": {
+      "type": "string",
+      "enum": [
+        "tier1",
+        "tier2",
+        "tier3",
+        "tier4"
+      ]
+    },
+    "mode": {
+      "type": "string"
+    },
+    "genreCode": {
+      "type": "string"
+    },
+    "storyType": {
+      "type": "string",
+      "description": "Narrative type axis code (see narrative:list-axes)."
+    },
+    "storyTheme": {
+      "type": "string",
+      "description": "Narrative theme axis code (see narrative:list-axes)."
+    },
+    "complexity": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5
+    },
+    "locale": {
+      "type": "string",
+      "enum": [
+        "en",
+        "zh"
+      ]
+    }
+  }
+}

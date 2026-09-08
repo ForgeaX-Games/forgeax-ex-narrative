@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "required": ["entryKey", "assets"],
+  "properties": {
+    "entryKey": { "type": "string" },
+    "assets": {
+      "type": "array",
+      "description": "写入后该条目的完整确认清单",
+      "items": { "$ref": "./asset-ref.schema.json" }
+    }
+  }
+}

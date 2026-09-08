@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["runId"],
+  "additionalProperties": false,
+  "description": "体量超线时按标记/单元闭环拆解→再标准化→重写骨架层级树(§5 步骤6-10)。",
+  "properties": {
+    "runId": { "type": "string", "description": "运行 id(=时间戳_故事名)" }
+  }
+}

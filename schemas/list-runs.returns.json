@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["key"],
+    "properties": {
+      "key": {
+        "type": "string",
+        "description": "Directory name / unique key for this run"
+      },
+      "type": {
+        "type": "string",
+        "enum": ["dir", "file"]
+      },
+      "id": {
+        "type": ["string", "null"],
+        "description": "Original run ID if available"
+      },
+      "tier": { "type": "string" },
+      "mode": { "type": "string" },
+      "status": {
+        "type": "string",
+        "enum": ["running", "completed", "failed", "interrupted", "unknown"]
+      },
+      "startedAt": { "type": "string" },
+      "completedAt": { "type": ["string", "null"] },
+      "hasCheckpoint": { "type": "boolean" },
+      "canResume": {
+        "type": "boolean",
+        "description": "True if this run can be resumed from its checkpoint"
+      },
+      "canLoad": { "type": "boolean" },
+      "lastCompletedStep": { "type": ["string", "null"] },
+      "completedSteps": {
+        "type": ["array", "null"],
+        "items": { "type": "string" }
+      },
+      "userInput": { "type": "string" },
+      "parentKey": {
+        "type": ["string", "null"],
+        "description": "Source run key if this was forked via regenerate"
+      },
+      "controls": {
+        "type": "object",
+        "description": "Action-guard layer: same primary/cancel computation the canvas uses (pipelineGuards()), so chat can know what actions are currently valid without reading a canvas broadcast.",
+        "properties": {
+          "state": { "type": "string", "enum": ["pending", "running", "paused", "interrupted", "completed"] },
+          "cancelEnabled": { "type": "boolean" },
+          "primary": { "type": "string", "enum": ["start", "resume", "regen", "none"] },
+          "canResume": { "type": "boolean" },
+          "canRegenerate": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

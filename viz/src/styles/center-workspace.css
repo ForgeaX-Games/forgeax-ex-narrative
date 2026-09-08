@@ -1,0 +1,1415 @@
+/**
+ * Center preview shell — aligned with forgeax-preview / gen3d EditorCenterWorkspace.
+ * Scope: center iframe only (body[data-pane="center"]).
+ */
+
+.editor-center-workspace {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--color-background-canvas);
+  font-family: var(--font-sans);
+  color: var(--color-text-primary);
+}
+
+/* 与左栏一致的 pane header，center iframe 专属 */
+/* 顶层标题条的底色与高度都由 .narrative-pane-header 统一，这里只补一句"别被压缩"。 */
+.cw-preview-header {
+  flex-shrink: 0;
+}
+
+/* 隐藏旧版 center 顶栏（mode-bar / action-bar），防止 dist 缓存或 full 模式残留 */
+.editor-center-workspace .mode-bar,
+.editor-center-workspace .action-bar {
+  display: none !important;
+}
+
+body[data-pane="center"] .editor-center-workspace {
+  height: 100%;
+}
+
+/* ── Pipeline status strip ─────────────────────────────────────────────── */
+.cw-pipeline-wrap {
+  flex-shrink: 0;
+  background: var(--color-background-base);
+  border-bottom: 1px solid var(--color-divider-subtle);
+}
+
+.cw-pipeline-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  padding: 10px 14px 6px;
+}
+
+.cw-eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.cw-pipeline-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+/* 副标题：与左侧三个步骤副标题 .narrative-step-note 字体统一（11px / secondary / 加粗） */
+.cw-pipeline-note {
+  flex-basis: 100%;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+}
+
+.cw-pipeline-empty {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  padding: 4px 14px 10px;
+}
+
+.cw-pipeline-track {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 4px 14px 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--primary) 24%, transparent) transparent;
+}
+
+.cw-pipeline-track::-webkit-scrollbar { height: 4px; }
+.cw-pipeline-track::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+  border-radius: 999px;
+}
+
+/* ── Toolbar: segmented view + actions ─────────────────────────────────── */
+.cw-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-bottom: 1px solid var(--color-divider-subtle);
+  background: var(--color-background-base);
+}
+
+/* 第三层注释带：高度与左栏路径行同一个数（那 1px 让给 .cw-toolbar 的分隔线）。 */
+.cw-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: calc(var(--pane-band3-h) - 1px);
+  padding: 0 12px;
+  min-height: 0;
+}
+
+.cw-toolbar-row + .cw-toolbar-row {
+  border-top: 1px solid var(--color-divider-subtle);
+}
+
+.fx-segmented {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.fx-segmented-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--prim-radius-6);
+  background: var(--color-background-floating);
+  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    transform var(--motion-duration-base) var(--motion-ease-out),
+    border-color var(--motion-duration-base) var(--motion-ease-out),
+    background var(--motion-duration-base) var(--motion-ease-out),
+    color var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.fx-segmented-btn:hover:not(.is-selected) {
+  background: var(--color-interaction-hover);
+  border-color: var(--color-border-strong);
+  color: var(--color-text-primary);
+}
+
+.fx-segmented-btn.is-selected {
+  border-color: var(--primary);
+  background: var(--color-interaction-selected-brand, color-mix(in srgb, var(--primary) 12%, transparent));
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.fx-segmented-btn:active { transform: scale(0.98); }
+
+.cw-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 第三层注释：与左栏路径行同一份分量——够看清，不抢正文。 */
+.cw-note {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cw-action-btns {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.fx-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--prim-radius-6);
+  background: var(--color-background-floating);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    transform var(--motion-duration-base) var(--motion-ease-out),
+    border-color var(--motion-duration-base) var(--motion-ease-out),
+    background var(--motion-duration-base) var(--motion-ease-out),
+    color var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.fx-btn:hover:not(:disabled) {
+  background: var(--color-interaction-hover);
+  border-color: var(--color-border-strong);
+}
+
+.fx-btn:active:not(:disabled) { transform: scale(0.98); }
+
+.fx-btn:disabled { cursor: not-allowed; opacity: 0.45; }
+
+.fx-btn--danger {
+  color: var(--color-accent-error-default);
+}
+
+.fx-btn--danger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--color-accent-error-default) 40%, transparent);
+  background: color-mix(in srgb, var(--color-accent-error-default) 8%, transparent);
+}
+
+.fx-btn--primary {
+  color: var(--color-background-canvas, #04160e);
+  background: var(--color-accent-brand-default, rgba(77, 255, 160, 0.9));
+  border-color: transparent;
+  font-weight: 600;
+}
+
+.fx-btn--primary:hover:not(:disabled) {
+  background: var(--color-accent-brand-hover, rgba(120, 255, 190, 0.95));
+  border-color: transparent;
+}
+
+/* ===================== 无限画布编排（composer） ===================== */
+.composer-view {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.composer-view__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--color-divider-subtle);
+  background: var(--color-background-base);
+}
+
+.composer-view__hint {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  max-width: 60%;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-view__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.composer-view__canvas {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+}
+
+.composer-view__empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  pointer-events: none;
+  z-index: 2;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  text-align: center;
+  padding: 0 24px;
+}
+
+/* ── 创作空间顶栏：四段级联（需求输入 / 叙事路由 / 叙事工具 / 视图模式） ──
+   设计稿 02/06/07：四个等宽矩形 tab 居中，点开后菜单列**浮在**主体上方，
+   不撑开顶栏高度，所以面板走 absolute。 */
+.cw-topnav {
+  position: relative;
+  z-index: 20;
+  background: var(--color-background-base);
+  border-bottom: 1px solid var(--color-divider-subtle);
+}
+
+/*
+ * 三个 tab 等宽，宽度由最长那条标签决定（grid 的 auto-columns: 1fr 就是这个意思）。
+ * 写死一个 px 宽在中文下够、英文下就把「Narrative planning expert groups」切掉半截；
+ * 让它们互相取齐既保住了对齐，也不必为每种语言各调一个数。
+ */
+.cw-topnav__bar {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  /* 让整条 bar 按内容收缩再居中：这样 1fr 取的是"最长那条的宽"，而不是把整行三等分。 */
+  width: max-content;
+  min-width: min(100%, 480px);
+  max-width: 100%;
+  margin: 0 auto;
+  align-items: stretch;
+  gap: 10px;
+  /* 带高与左栏第二层同一个数（那 1px 让给 .cw-topnav 的分隔线）；tab 撑满剩下的空间。 */
+  height: calc(var(--pane-band2-h) - 1px);
+  padding: 6px 12px;
+}
+
+/* 三个 tab 是这一层唯一的动作，所以它们得读起来像按钮而不是标签：
+   字重压住旁边的说明文字，底色把矩形框实体化。底色掺主题绿而非纯灰，
+   是为了让"这三块是工具入口"和下面画布的中性黑分开。 */
+.cw-topnav__tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--color-border-default));
+  background: color-mix(in srgb, var(--primary) 10%, var(--color-background-floating));
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-align: center;
+  white-space: nowrap;
+  cursor: pointer;
+  position: relative;
+  transition:
+    color var(--motion-duration-fast) var(--motion-ease-out),
+    background var(--motion-duration-base) var(--motion-ease-out),
+    border-color var(--motion-duration-base) var(--motion-ease-out);
+}
+
+.cw-topnav__tab:hover:not(.is-open) {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 18%, var(--color-background-floating));
+  border-color: color-mix(in srgb, var(--primary) 55%, transparent);
+}
+
+.cw-topnav__tab.is-open {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 24%, var(--color-background-base));
+  border-color: var(--primary);
+}
+
+/* 第二枚需求入口：外观与三个 tab 一致（同一条 bar 里不该突兀），但语义是"拖"不是"点开菜单"，
+   所以光标换成 grab，且不参与 is-open 高亮态。 */
+.cw-topnav__entry {
+  gap: 4px;
+  cursor: grab;
+  user-select: none;
+}
+
+.cw-topnav__entry:active { cursor: grabbing; }
+
+.cw-topnav__entry.is-locked {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/*
+ * 级联面板：浮在创作空间之上，左沿对齐**打开它的那个 tab**（--cw-menu-x 由组件量出来写入）。
+ * 不居中是有意的：三组工具各自成列，菜单从哪个 tab 落下来一眼可辨；居中会让三组的菜单
+ * 都长在同一个位置，用户失去"我点的是哪一组"的方位感。
+ */
+.cw-topnav__panel {
+  position: absolute;
+  top: 100%;
+  left: var(--cw-menu-x, 50%);
+  margin-top: -1px;
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--primary);
+  background: color-mix(in srgb, var(--primary) 5%, var(--color-background-floating));
+  box-shadow: var(--shadow-overlay, 0 8px 24px rgb(0 0 0 / 28%));
+  max-height: 320px;
+  z-index: 21;
+}
+
+/* 竖排菜单列：一列一级，列与列之间一根细线。 */
+.cw-menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 148px;
+  padding: 6px 0;
+  overflow-y: auto;
+}
+
+.cw-menu + .cw-menu { border-left: 1px solid color-mix(in srgb, var(--primary) 24%, transparent); }
+
+/* 末级列可能有上百条（品类），给一个更宽的滚动区。 */
+.cw-menu--leaf { min-width: 176px; max-height: 320px; }
+
+.cw-menu__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 12px;
+  border: none;
+  border-left: 2px solid transparent;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color var(--motion-duration-fast) var(--motion-ease-out),
+    background var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+/* 三种态各自换一种颜色，而不是三种都往灰白里挪一点：
+   悬停是"手在这"、展开是"这一级还有下一列"、选中是"值就是它"，
+   同色不同亮度分不出这三件事，扫一眼菜单只剩一片灰。 */
+.cw-menu__item:hover {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, var(--color-background-base));
+}
+
+/* is-open = 这一级被展开（右边还有下一列）；is-active = 这一项就是当前选中值。 */
+.cw-menu__item.is-open {
+  color: var(--color-text-primary);
+  background: color-mix(in srgb, var(--primary) 18%, var(--color-background-base));
+  border-left-color: color-mix(in srgb, var(--primary) 45%, transparent);
+}
+
+.cw-menu__item.is-active {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  border-left-color: var(--primary);
+}
+
+.cw-menu__picked {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--color-text-tertiary, var(--color-text-secondary));
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 末级角色行：@ 在前、名字在后，整行可拖进画布（原底部调色板的两件事都在这里）。 */
+.cw-menu__leaf {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 8px;
+  border-left: 2px solid transparent;
+  cursor: grab;
+}
+
+.cw-menu__leaf:active { cursor: grabbing; }
+.cw-menu__leaf:hover { background: color-mix(in srgb, var(--primary) 12%, var(--color-background-base)); }
+.cw-menu__leaf:hover .cw-menu__item { color: var(--primary); }
+.cw-menu__leaf.is-active {
+  border-left-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+.cw-menu__leaf.is-active .cw-menu__item { color: var(--primary); }
+
+/* 生产开始后编排锁定：光标先说明拖不动，title 说明为什么。
+   @ 与「点一下落路由」不在锁内，跑着的时候那两件事仍然成立。 */
+.cw-menu__leaf.is-locked { cursor: default; }
+
+.cw-menu__item--leaf {
+  flex: 1;
+  padding-left: 4px;
+  border-left: none;
+  background: transparent;
+}
+
+.cw-menu__item--leaf:hover { background: transparent; }
+
+/* 席位角色角标：只给「跑管线不一定带上」的席位。default 不标——常态标了全是噪音。 */
+.cw-menu__role {
+  margin-left: 6px;
+  padding: 0 4px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  font-size: 9px;
+  line-height: 14px;
+  opacity: 0.75;
+  vertical-align: middle;
+}
+.cw-menu__role--optional { color: rgba(255, 190, 120, 0.9); }
+.cw-menu__role--attachable { color: rgba(200, 150, 255, 0.9); }
+.cw-menu__role--manual { color: rgba(160, 170, 185, 0.9); }
+
+.cw-menu__at {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-icon-secondary);
+  cursor: pointer;
+}
+
+.cw-menu__at:hover {
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 55%, transparent);
+}
+
+/* ── 中栏空态水印（设计稿 01） ── */
+.cw-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+}
+
+.cw-hero__title {
+  font-size: 34px;
+  letter-spacing: 0.22em;
+  color: var(--color-text-primary);
+  opacity: 0.16;
+}
+
+.cw-hero__sub {
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  color: var(--color-text-secondary);
+  opacity: 0.5;
+}
+
+/* ── 中栏底部：需求输入编辑区 + 常驻操作条（设计稿 03/05） ── */
+/* ── 创作空间浮层（设计稿 01/03/04）：压在主体之上，不占布局高度 ── */
+.cw-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  /* 只有浮出来的那几块能点，其余交给下面的画布。 */
+  pointer-events: none;
+}
+
+.cw-overlay > * { pointer-events: auto; }
+
+.cw-overlay__error {
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  transform: translateX(-50%);
+  max-width: 70%;
+  padding: 6px 10px;
+  border: 1px solid var(--color-danger, #d9534f);
+  border-radius: var(--prim-radius-6);
+  background: var(--color-background-floating);
+  color: var(--color-danger, #d9534f);
+  font-size: 11px;
+}
+
+/* 底部工具条居中：生成键与视图/缩放键同形同列，读起来是一排工具而不是两堆按钮。 */
+.cw-overlay__actions {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cw-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cw-actions__hint {
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  cursor: pointer;
+  text-decoration: underline dotted;
+}
+
+.cw-canvasctl { display: flex; gap: 4px; }
+
+.cw-canvasctl__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--prim-radius-6);
+  background: var(--color-background-base);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.cw-canvasctl__btn:hover:not(:disabled) {
+  color: var(--color-text-primary);
+  border-color: var(--color-border-strong, var(--color-border-default));
+}
+
+.cw-canvasctl__btn:disabled { opacity: 0.4; cursor: default; }
+
+/* 生成主键：同形不同色，一排里一眼看得出哪个是"跑"。 */
+.cw-canvasctl__btn--primary:not(:disabled) {
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 55%, transparent);
+}
+
+.cw-canvasctl__btn.is-warn {
+  color: var(--color-accent-orange-default);
+  border-color: color-mix(in srgb, var(--color-accent-orange-default) 55%, transparent);
+}
+
+/* ── Canvas flow node（复用管线状态 .rf-pipeline-node 观感：横向、前后连接） ──
+   卡片宽度定在 index.css 的 .composer-node--card：那里才排在「运行态借用本形式」的
+   width:100% 之后，写在这里会被它按层叠顺序盖掉。 */
+.composer-node {
+  box-sizing: border-box;
+  transition: width 0.15s ease;
+}
+/* 展开的节点抬到上层，避免被相邻节点压住 */
+.react-flow__node:has(.composer-node.is-expanded) { z-index: 20 !important; }
+
+/* 拖动手柄（标题栏 ∪ 简介栏）：点击=展开/收起，长按=拖动。
+   touch-action:none 让指针拖拽生效并禁掉滚动手势；节点整体 .nopan 阻止画布跟随平移。 */
+.composer-node__drag {
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.composer-node__drag:active { cursor: grabbing; }
+
+/* 满铺加深的标题条：负外边距顶到节点内边距边缘，收起/展开两态一致 */
+.composer-node__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -8px -12px 0;
+  padding: 6px 12px;
+  background: rgba(0, 0, 0, 0.28);
+  border-radius: var(--prim-radius-6) var(--prim-radius-6) 0 0;
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.05);
+}
+.composer-node__icon { font-size: 9px; opacity: 0.85; flex-shrink: 0; }
+/* 左侧标题复用 .rf-pipeline-label（flex:1 + 省略号） */
+.composer-node__title { flex: 1; }
+
+/* 右侧状态（就绪 / 孤立，预留生成进度位） */
+.composer-node__status {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  color: var(--dt-text-sec);
+}
+.composer-node__status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dt-green);
+  box-shadow: 0 0 6px var(--dt-green-faint);
+}
+.composer-node__status.is-isolated { color: var(--dt-text-sec); }
+.composer-node__status.is-isolated .composer-node__status-dot {
+  background: var(--dt-text-sec);
+  box-shadow: none;
+}
+/* 待确认（脏态）：琥珀色点，与就绪(绿)/孤立(灰)区分。 */
+.composer-node__status.is-pending { color: var(--dt-amber, #e0b341); }
+.composer-node__status.is-pending .composer-node__status-dot {
+  background: var(--dt-amber, #e0b341);
+  box-shadow: 0 0 6px rgba(224, 179, 65, 0.4);
+}
+
+/* 收起态简介栏（借鉴管线节点：标题下方一行摘要） */
+.composer-node__summary {
+  margin-top: 5px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--dt-text-sec);
+  font-family: var(--font-mono);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.composer-node.cat-input { border-color: rgba(120, 200, 255, 0.55); }
+.composer-node.cat-routing { border-color: rgba(255, 190, 120, 0.55); }
+.composer-node.cat-expert { border-color: rgba(77, 255, 160, 0.55); }
+.composer-node.cat-assistant { border-color: rgba(200, 150, 255, 0.55); }
+.composer-node.cat-engineer { border-color: rgba(255, 235, 120, 0.55); }
+
+.composer-node.cat-input::before { background: rgba(120, 200, 255, 0.9); }
+.composer-node.cat-routing::before { background: rgba(255, 190, 120, 0.9); }
+.composer-node.cat-expert::before { background: rgba(77, 255, 160, 0.9); }
+.composer-node.cat-assistant::before { background: rgba(200, 150, 255, 0.9); }
+.composer-node.cat-engineer::before { background: rgba(255, 235, 120, 0.9); }
+
+/* 孤立节点（未连到输入节点）：仅以半透明 + 空心把手示意，不再加虚线边框。 */
+.composer-node.isolated {
+  opacity: 0.6;
+}
+
+/* 连接把手（Part4）：颜色随节点主题色 --cat-color；空心=未连线，实心=已连线。 */
+.composer-node .composer-handle {
+  border: 1.5px solid var(--cat-color, var(--dt-green-dim)) !important;
+  box-shadow: none !important;
+}
+.composer-node .composer-handle.is-empty {
+  background: var(--color-background-base, #0a0f0a) !important;
+}
+.composer-node .composer-handle.is-filled {
+  background: var(--cat-color, var(--dt-green-dim)) !important;
+}
+.composer-node .composer-handle:hover {
+  box-shadow: 0 0 8px var(--cat-color, var(--dt-green-faint)) !important;
+}
+
+/* 展开态详情栏：卡片内部的一段（非悬浮面板），随标题栏一起构成同一张卡片 */
+.composer-node__editor {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--dt-green-faint);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  cursor: default;
+}
+
+/* 文件上传（轻）：拖放区 + 文件列表 */
+.composer-file-drop {
+  border: 1px dashed var(--dt-green-faint);
+  border-radius: var(--prim-radius-4, 4px);
+  padding: 10px 8px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+.composer-file-drop:hover {
+  border-color: var(--dt-green-dim);
+  background: rgba(77, 255, 160, 0.05);
+}
+.composer-file-drop__text { font-size: 10px; color: var(--dt-text); }
+.composer-file-drop__hint { font-size: 9px; color: var(--dt-text-sec); margin-top: 2px; }
+
+.composer-file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.composer-file-list__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--dt-text-sec);
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 3px;
+  padding: 2px 6px;
+}
+.composer-file-list__name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.composer-file-list__remove {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--dt-text-sec);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.composer-file-list__remove:hover { color: var(--dt-red); }
+.composer-file-list__size { flex-shrink: 0; font-size: 9px; color: var(--dt-text-sec); opacity: 0.7; }
+
+/* 节点内嵌 IP 预处理流程（IpStageFlow）——与左侧栏等价，仅收窄间距适配节点宽度。 */
+.composer-ip-stage { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.composer-ip-stage .ip-stage-flow { gap: 6px; }
+.composer-ip-hint { margin-top: 2px; }
+
+/* 节点确认按钮行：直接复用左栏 .ip-stage-card__foot 的小巧样式，仅补一点上间距。 */
+.composer-config__foot { margin-top: 6px; }
+
+/* 左下角控件里的「标准化」循环图标 —— 颜色/尺寸对齐其它内置图标（stroke 型） */
+.composer-controls .react-flow__controls-button svg {
+  width: 14px;
+  height: 14px;
+  stroke: var(--dt-text-sec);
+}
+.composer-controls .react-flow__controls-button:hover svg {
+  stroke: var(--dt-text);
+}
+
+/* ── Node config panel（内联编辑复用其字段样式） ── */
+.composer-config {
+  flex: 0 0 260px;
+  width: 260px;
+  border-left: 1px solid var(--color-divider-subtle);
+  background: var(--color-background-base);
+  padding: 12px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.composer-config--empty {
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  text-align: center;
+}
+
+.composer-config__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-divider-subtle);
+}
+
+.composer-config__icon { font-size: 14px; }
+.composer-config__title { font-size: 13px; font-weight: 600; color: var(--color-text-primary); }
+
+.composer-config__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.composer-config__label {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+/* 可挂载席勾选组：三席可任意组合，故是多选而非下拉。 */
+.composer-config__checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.composer-config__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.composer-config__check input { margin: 0; cursor: pointer; }
+
+/* 入口节点的两个二/三选一（怎么说需求、走哪条路由）：
+   选项少且互斥，用下拉会多一次点击才看见有哪些，横排按钮一眼全在。 */
+.composer-config__seg {
+  display: flex;
+  gap: 4px;
+}
+
+.composer-config__seg-btn {
+  flex: 1;
+  padding: 5px 6px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--prim-radius-6);
+  background: var(--color-background-floating);
+  color: var(--color-text-secondary);
+  font-family: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color var(--motion-duration-fast) var(--motion-ease-out),
+    background var(--motion-duration-fast) var(--motion-ease-out),
+    border-color var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.composer-config__seg-btn:hover { color: var(--color-text-primary); }
+
+.composer-config__seg-btn.is-active {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 14%, var(--color-background-floating));
+}
+
+.composer-config__input,
+.composer-config__select,
+.composer-config__textarea {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--prim-radius-6);
+  background: var(--color-background-floating);
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.composer-config__textarea { resize: vertical; }
+
+.composer-config__input:focus,
+.composer-config__select:focus,
+.composer-config__textarea:focus {
+  outline: none;
+  border-color: var(--color-accent-brand-default, rgba(77, 255, 160, 0.6));
+}
+
+.composer-config__readonly {
+  font-size: 12px;
+  color: var(--color-text-primary);
+  padding: 4px 0;
+}
+
+.composer-solo__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.composer-solo__state {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.composer-solo__state.is-failed {
+  color: var(--color-danger, #d9534f);
+}
+
+.composer-solo__steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.composer-solo__step {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--color-divider-subtle);
+  color: var(--color-text-secondary);
+}
+
+.composer-solo__step.is-running {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.composer-solo__step.is-completed {
+  border-color: color-mix(in srgb, var(--primary) 45%, transparent);
+  color: var(--color-text-primary);
+}
+
+.composer-solo__step.is-failed {
+  border-color: var(--color-danger, #d9534f);
+  color: var(--color-danger, #d9534f);
+}
+
+.fx-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--prim-radius-6);
+  background: var(--color-background-floating);
+  color: var(--color-icon-secondary);
+  cursor: pointer;
+  transition:
+    border-color var(--motion-duration-base) var(--motion-ease-out),
+    color var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.fx-icon-btn:hover {
+  color: var(--primary);
+  border-color: var(--color-border-strong);
+}
+
+/* ── Workspace body ────────────────────────────────────────────────────── */
+.editor-center-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  width: 100%;
+}
+
+.editor-center-scroll {
+  height: 100%;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--primary) 24%, transparent) transparent;
+}
+
+.editor-center-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+.editor-center-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+  border-radius: 999px;
+}
+
+/* Pipeline chips — center scope overrides */
+.editor-center-workspace .pipeline-chip {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  background: var(--color-background-elevated);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--prim-radius-4);
+  transition:
+    border-color var(--motion-duration-base) var(--motion-ease-out),
+    background var(--motion-duration-base) var(--motion-ease-out),
+    color var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.editor-center-workspace .pipeline-chip:hover {
+  background: var(--color-interaction-hover);
+  color: var(--color-text-primary);
+}
+
+.editor-center-workspace .pipeline-chip.active {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  color: var(--primary);
+}
+
+.editor-center-workspace .pipeline-chip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border-default);
+  background: var(--color-background-floating);
+}
+
+.editor-center-workspace .pipeline-chip.status-completed .pipeline-chip-icon,
+.editor-center-workspace .pipeline-chip.status-draft_ready .pipeline-chip-icon {
+  border-color: color-mix(in srgb, var(--primary) 40%, transparent);
+  color: var(--primary);
+}
+
+.editor-center-workspace .pipeline-chip.status-running .pipeline-chip-icon {
+  border-color: color-mix(in srgb, var(--color-accent-orange-default) 50%, transparent);
+  color: var(--color-accent-orange-default);
+}
+
+.editor-center-workspace .pipeline-chip.status-failed .pipeline-chip-icon {
+  border-color: color-mix(in srgb, var(--color-accent-error-default) 45%, transparent);
+  color: var(--color-accent-error-default);
+}
+
+.editor-center-workspace .pipeline-chip-arrow {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+.editor-center-workspace .pipeline-bar-auto {
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  background: var(--color-background-elevated);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--prim-radius-4);
+  padding: 2px 6px;
+}
+
+/* Step detail drawer — no glow shadow */
+.editor-center-workspace .step-detail-panel {
+  background: var(--color-background-base);
+  border-top: 1px solid var(--color-divider-subtle);
+  box-shadow: none;
+  animation: cw-panel-in var(--motion-duration-panel) var(--motion-ease-out);
+}
+
+@keyframes cw-panel-in {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.editor-center-workspace .step-detail-panel-header {
+  background: var(--color-background-elevated);
+  border-bottom: 1px solid var(--color-divider-subtle);
+}
+
+.editor-center-workspace .step-detail-panel-title {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.editor-center-workspace .step-detail-close {
+  font-family: var(--font-sans);
+}
+
+/* Cross-step link bar */
+.editor-center-workspace .cross-step-link-bar {
+  background: var(--color-background-elevated);
+  border: 1px solid var(--color-border-default);
+  border-left: 2px solid var(--primary);
+  border-radius: var(--prim-radius-6);
+  font-family: var(--font-sans);
+}
+
+.editor-center-workspace .cross-step-link-chip {
+  font-family: var(--font-sans);
+  border-color: var(--color-border-default);
+  color: var(--color-text-primary);
+}
+
+.editor-center-workspace .cross-step-link-chip:hover {
+  background: var(--color-interaction-hover);
+  border-color: var(--primary);
+}
+
+.editor-center-workspace .cross-step-link-chip-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-icon-secondary);
+}
+
+.editor-center-workspace .cross-step-link-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--primary);
+}
+
+/* Text view empty */
+.editor-center-workspace .empty-text {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.02em;
+}
+
+.editor-center-workspace .text-view {
+  padding: 12px 16px;
+}
+
+.editor-center-workspace .pipeline-bar-tracks.is-multi {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.editor-center-workspace .pipeline-bar-lane {
+  border-top: 1px solid var(--color-divider-subtle);
+  cursor: pointer;
+}
+
+.editor-center-workspace .pipeline-bar-lane.is-active {
+  background: color-mix(in srgb, var(--primary) 6%, transparent);
+}
+
+.editor-center-workspace .pipeline-bar-lane-head {
+  padding: 4px 14px 0;
+}
+
+.editor-center-workspace .pipeline-bar-lane-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.editor-center-workspace .pipeline-bar-lane.is-active .pipeline-bar-lane-title {
+  color: var(--primary);
+}
+
+.editor-center-workspace .pipeline-bar-lane-head {
+  display: flex;
+  align-items: center;
+}
+
+.editor-center-workspace .pipeline-bar-lane-state {
+  margin-left: 6px;
+  font-size: 9px;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary, var(--color-text-secondary));
+}
+
+.editor-center-workspace .pipeline-bar-lane-state.is-running {
+  color: var(--primary);
+}
+
+.editor-center-workspace .pipeline-bar-lane-state.is-failed {
+  color: var(--color-danger, #d9534f);
+}
+
+.editor-center-workspace .text-pipeline-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.editor-center-workspace .text-pipeline-tab {
+  border: 1px solid var(--color-divider-subtle);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.editor-center-workspace .text-pipeline-tab.is-active {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.editor-center-workspace .text-pipeline-box {
+  border: 1px solid var(--color-divider-subtle);
+  border-radius: 4px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.editor-center-workspace .text-pipeline-box__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 6%, transparent);
+  border-bottom: 1px solid var(--color-divider-subtle);
+}
+
+.editor-center-workspace .text-pipeline-box__body {
+  padding: 6px 8px 8px;
+}
+
+.cw-spin {
+  animation: cw-spin 1s linear infinite;
+}
+
+@keyframes cw-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 工具栏补充：未接线席位、自定义团队
+ * ──────────────────────────────────────────────────────────────── */
+
+/* 后端还没有单跑入口的席位：能拖能 @，点不动。 */
+.cw-menu__leaf.is-unwired .cw-menu__item--leaf {
+  color: var(--color-text-tertiary);
+  cursor: default;
+}
+
+.cw-menu__hint {
+  margin: 4px 8px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--color-text-tertiary);
+}
+
+.cw-menu__hint--warn { color: var(--color-warning, #d1a343); }
+
+.cw-menu--custom {
+  min-width: 248px;
+  max-height: 360px;
+}
+
+/* 建团模态：蒸馏一支私有助手是独立一件事（要填来源、投喂素材、等后端跑），
+   不是菜单里的下一项，所以它离开那条 44px 的工具带，居中独占创作空间。 */
+.cw-team-modal__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--color-overlay-modal, rgba(0, 0, 0, 0.5));
+  backdrop-filter: blur(4px);
+}
+
+.cw-team-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(420px, 100%);
+  max-height: 80vh;
+  overflow: hidden;
+  border: 1px solid var(--primary);
+  border-radius: var(--prim-radius-6);
+  background: var(--color-background-floating);
+  box-shadow: var(--shadow-overlay, 0 8px 24px rgb(0 0 0 / 28%));
+}
+
+.cw-team-modal__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-divider-subtle);
+}
+
+.cw-team-modal__title {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--primary);
+}
+
+.cw-team-modal__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--prim-radius-4);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.cw-team-modal__close:hover { color: var(--primary); border-color: var(--primary); }
+
+.cw-team-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px 12px;
+  overflow-y: auto;
+}
+
+.cw-team-form__kinds { display: flex; gap: 4px; }
+
+.cw-team-form__kinds .cw-menu__item {
+  flex: 1;
+  justify-content: center;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--prim-radius-4);
+}
+
+.cw-team-form__foot { display: flex; gap: 4px; }
+.cw-team-form__foot .fx-btn { flex: 1; justify-content: center; }
+
+/* 菜单末尾的新建位：与菜单项同宽的一个 +，按下收起菜单、另开居中的建团模态。 */
+.cw-menu__new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 4px 8px 2px;
+  padding: 5px 0;
+  border: 1px dashed var(--color-border-default);
+  border-radius: var(--prim-radius-4);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.cw-menu__new:hover { color: var(--primary); border-color: var(--primary); }
+
+
+/* Legacy full-mode: map old class when not in center-only iframe */
+.app-right-panel.editor-center-workspace {
+  background: var(--color-background-canvas);
+}

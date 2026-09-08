@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["sourceDir", "fromStepId"],
+  "additionalProperties": false,
+  "properties": {
+    "sourceDir": {
+      "type": "string",
+      "description": "Source run directory key (from list-runs 'key' field)"
+    },
+    "fromStepId": {
+      "type": "string",
+      "description": "Step ID to regenerate from (e.g. 'story_framework', 'outline_batch')"
+    },
+    "userInstructions": {
+      "type": "string",
+      "maxLength": 5000,
+      "description": "Natural language instructions for how to change the regenerated content"
+    },
+    "stopAfterStep": {
+      "type": "string",
+      "description": "Stop pipeline after this step instead of running to completion"
+    },
+    "model": {
+      "type": "string",
+      "description": "Override LLM model for this regeneration"
+    },
+    "skipSteps": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Step IDs to skip during regeneration"
+    },
+    "nodeFilter": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "description": "Per-step node ID filter: only regenerate listed nodes within each step (partial regen)"
+    },
+    "editDrafts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "content": { "description": "Edited content to inject" },
+          "userInput": { "type": "string", "description": "User instruction for this specific edit" }
+        }
+      },
+      "description": "Pre-edited content drafts keyed by stepId or 'stepId::nodeId'"
+    }
+  }
+}

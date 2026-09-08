@@ -1,0 +1,20 @@
+{
+  "type": "object",
+  "required": ["path"],
+  "properties": {
+    "path": {
+      "type": "string",
+      "description": "`<group>/<相对路径>`，与 narrative:list-files 返回的扁平清单同形"
+    },
+    "pipelineId": {
+      "type": "string",
+      "description": "泳道；缺省 = 主管线。一个条目并跑多条管线时，同名产物靠它分开"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "钉住的版本号；缺省表示跟随最新（重生成后下游读到新内容）"
+    },
+    "confirmedAt": { "type": "string", "description": "确认时间 ISO 8601" }
+  }
+}

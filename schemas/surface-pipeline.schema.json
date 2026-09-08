@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "narrative.pipeline",
+  "description": "Center-pane pipeline state snapshot: step progress + results + edit drafts",
+  "type": "object",
+  "required": ["steps"],
+  "properties": {
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "status"],
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string" },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "running", "completed", "failed"]
+          },
+          "data": {
+            "description": "Step output data (structure varies by step type)"
+          }
+        }
+      },
+      "description": "Ordered list of pipeline steps with their current status"
+    },
+    "activeEntryKey": {
+      "type": ["string", "null"],
+      "description": "The history entry currently being viewed"
+    },
+    "activeEntryStatus": {
+      "type": ["string", "null"],
+      "enum": ["completed", "running", "interrupted", null]
+    },
+    "pipelineOrder": {
+      "type": ["array", "null"],
+      "items": { "type": "string" },
+      "description": "Authoritative step execution order from SSE announce"
+    },
+    "viewMode": {
+      "type": "string",
+      "enum": ["text", "graph"],
+      "description": "Current view mode in the center pane"
+    },
+    "focusedStepId": {
+      "type": ["string", "null"],
+      "description": "Step currently focused/expanded by the user"
+    },
+    "editDrafts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "content": { "description": "Draft edited content" },
+          "userInput": { "type": "string" },
+          "editing": { "type": "boolean" },
+          "saved": { "type": "boolean" }
+        }
+      },
+      "description": "User edit drafts keyed by stepId or 'stepId::nodeId'"
+    }
+  }
+}

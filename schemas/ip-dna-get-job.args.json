@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["jobId"],
+  "additionalProperties": false,
+  "description": "轮询异步任务(ingest/extract/generate)的状态/进度/结果。",
+  "properties": {
+    "jobId": { "type": "string", "description": "任务 id(由 async 阶段门返回)" }
+  }
+}

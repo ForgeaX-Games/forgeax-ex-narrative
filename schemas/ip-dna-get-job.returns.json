@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": true,
+  "description": "任务状态:status/current_stage/progress + 完成或等待确认时的 result。",
+  "properties": {
+    "jobId": { "type": "string" },
+    "story_timestamp": { "type": "string" },
+    "status": { "type": "string", "description": "pending/running/awaiting_confirmation/completed/failed/degraded" },
+    "current_stage": { "type": "string" },
+    "progress": { "type": "number", "description": "0-100" },
+    "message": { "type": "string" },
+    "error": { "type": "string" },
+    "result": { "description": "completed/awaiting_confirmation 时的结果摘要" }
+  }
+}

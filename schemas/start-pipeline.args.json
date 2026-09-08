@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "userInput"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "userInput": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 10000,
+      "description": "Story requirements in any language (free text). May include genre hints, theme, setting, character concepts, or an entire brief."
+    },
+    "tier": {
+      "type": "string",
+      "enum": [
+        "tier1",
+        "tier2",
+        "tier3",
+        "tier4"
+      ],
+      "description": "Narrative intensity tier. Omit to let the pipeline auto-detect via LLM."
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "full",
+        "novel",
+        "script",
+        "quest",
+        "scene",
+        "initial_outline",
+        "worldview",
+        "character",
+        "item_lore",
+        "story_framework",
+        "story_outline",
+        "detailed_outline",
+        "fragmented",
+        "emergent",
+        "narrative_auto",
+        "narrative_card",
+        "tier2_enhanced",
+        "tier3_basic",
+        "design_auto",
+        "design_full_narrative",
+        "design_fragmented",
+        "design_emergent",
+        "design_only",
+        "vn_full",
+        "design_vn_full"
+      ],
+      "description": "Pipeline mode (step sequence). Omit to use tier default (design_auto)."
+    },
+    "genreCode": {
+      "type": "string",
+      "description": "Explicit genre code from the 94-entry taxonomy (e.g. 'rpg-jrpg'). Skips LLM genre detection when provided."
+    },
+    "complexity": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5,
+      "description": "Narrative complexity level (1=minimal, 5=maximum depth)."
+    },
+    "routeGroup": {
+      "type": "string",
+      "enum": [
+        "planning",
+        "narrative"
+      ],
+      "description": "Route group: 'planning' for game design pipeline, 'narrative' for story-only."
+    },
+    "routingMode": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "semi",
+        "manual"
+      ],
+      "description": "Routing strategy. 'auto' = full LLM detection, 'semi' = tier given / mode auto, 'manual' = both given."
+    },
+    "model": {
+      "type": "string",
+      "description": "Override LLM model for this run (e.g. 'gemini-2.5-pro'). Uses NARRATIVE_MODEL env default when omitted."
+    },
+    "teamId": {
+      "type": "string",
+      "description": "Custom creative team to bring along, distilled from user-supplied books or an author's body of work. Call narrative:list-teams first and pass an id whose status is 'ready'; other statuses are treated as no team at all. When the user mentions a team via '@', the inserted text carries 'team=<id>'."
+    },
+    "storyType": {
+      "type": "string",
+      "description": "Narrative type axis code (call narrative:list-axes for the vocabulary). Omit to let the pipeline infer it from the request text."
+    },
+    "storyTheme": {
+      "type": "string",
+      "description": "Narrative theme axis code (call narrative:list-axes for the vocabulary). Omit to let the pipeline infer it. The third axis, narrative structure, is derived server-side from type + theme and cannot be set directly."
+    },
+    "entryKey": {
+      "type": "string",
+      "description": "Entry this run belongs to, as returned by narrative:create-entry. Omit and the run mints its own timestamp directory with no _entry.json, which leaves it in the left rail with no recorded parameters. Create the entry first when you want the same entry record the node canvas produces."
+    },
+    "activateSeats": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "deai",
+          "plot_refine",
+          "plot_polish"
+        ]
+      },
+      "description": "Off-by-default polish seats to attach after plot generation. Each one rewrites the generated script in place as a new version of the same field. All off by default: three extra LLM passes over the plot layer."
+    }
+  }
+}

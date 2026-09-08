@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": true,
+  "description": "摄入结果:层级树骨架 + 体量/拆解建议 + 默认裁剪/单元/维度 + 干扰过滤项(async 时为 jobId)。",
+  "properties": {
+    "story_timestamp": { "type": "string", "description": "故事主键时间戳" },
+    "run_id": { "type": "string", "description": "运行 id(=时间戳_故事名),后续阶段门用" },
+    "title": { "type": "string", "description": "故事标题" },
+    "media_type": { "type": "string", "description": "输入媒体类型" },
+    "node_count": { "type": "number", "description": "层级树节点总数" },
+    "hierarchy": { "type": "array", "description": "层级节点摘要(可编辑/可审阅)" },
+    "volume": { "type": "object", "description": "体量水准线评估(是否超线+建议拆解块数)" },
+    "decomposition": { "type": "object", "description": "拆解闭环结果" },
+    "noise_filtered": { "type": "array", "items": { "type": "string" }, "description": "被剔除的非正文/干扰节点标题" },
+    "default_scope": { "type": "object", "description": "默认裁剪范围(全量)" },
+    "default_game_unit_plan": { "type": "object", "description": "默认游戏单元切分" },
+    "default_dimensions": { "type": "object", "description": "默认改编维度" },
+    "awaiting": { "type": "string", "description": "下一步动作(confirm-scope)" },
+    "jobId": { "type": "string", "description": "async 时的任务 id" },
+    "status": { "type": "string", "description": "async 时的任务状态" }
+  }
+}

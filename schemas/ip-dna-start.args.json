@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["files"],
+  "additionalProperties": false,
+  "properties": {
+    "files": {
+      "type": "array",
+      "description": "输入文件(至少一个)。三种给法任选:path 工程内路径(聊天附件走这条)、content 文本、contentBase64 二进制",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "anyOf": [
+          { "required": ["path"] },
+          { "required": ["content"] },
+          { "required": ["contentBase64"] }
+        ],
+        "properties": {
+          "path": { "type": "string", "description": "工程内相对路径(聊天附件/工作区文件首选此项:docx 等二进制无需自行 base64,由插件读盘转换)。越出工程根目录会被拒绝" },
+          "fileName": { "type": "string", "description": "文件名(含扩展名);给了 path 时缺省取路径末段" },
+          "content": { "type": "string", "description": "UTF-8 文本内容(与 contentBase64 二选一)" },
+          "contentBase64": { "type": "string", "description": "base64 内容(图片/视频/docx 等二进制)" },
+          "encoding": { "type": "string", "enum": ["utf8", "base64-docx"], "description": "可选,docx 走 base64-docx" },
+          "fileType": { "type": "string", "description": "MIME 类型,默认 text/plain;给了 path 时按扩展名推断" },
+          "role": { "type": "string", "description": "可选,文件角色标注" }
+        }
+      }
+    },
+    "title": { "type": "string", "description": "可选,故事标题(缺省取首文件名)" },
+    "mode": { "type": "string", "enum": ["single", "series"], "description": "完整游戏模式,默认 series" },
+    "scopeSelections": {
+      "type": "array",
+      "description": "§4.4 第①步对话产物:裁剪范围(嵌套层级选择)。缺省=全量改编",
+      "items": {
+        "type": "object",
+        "required": ["nodeId"],
+        "properties": {
+          "nodeId": { "type": "string", "description": "选中的层级节点 id" },
+          "childRange": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2, "description": "限定子层区间[start,end];缺省=全选子树" },
+          "children": { "type": "array", "description": "更深层嵌套选择(同结构递归)" }
+        }
+      }
+    },
+    "gameUnitPlan": {
+      "type": "object",
+      "description": "§4.4 第②步对话产物:用户精确选填的游戏单元规划。缺省=默认切分",
+      "properties": {
+        "mode": { "type": "string", "enum": ["single", "series"], "description": "完整游戏模式" },
+        "units": { "type": "array", "description": "游戏单元列表(每单元含 unitRange/boundary/目标体量)" },
+        "userSpecified": { "type": "boolean", "description": "是否用户精确选填(覆盖默认体量与软硬区间)" }
+      }
+    },
+    "adaptationDimensions": {
+      "type": "object",
+      "description": "§4.4 第③步对话产物:改编维度(叙事层级数 + 模板字段)。缺省=全维度模板",
+      "properties": {
+        "levelNodeIds": { "type": "array", "items": { "type": "string" }, "description": "改哪些层/单元(节点 id)" },
+        "templateFields": { "type": "array", "items": { "type": "string" }, "description": "改哪些模板维度字段(worldview/characters/story_structure/core_elements 及细分)" },
+        "fieldTargets": { "description": "可选,定点到具体字段(某角色/场景/情节点/分支)" }
+      }
+    },
+    "adaptationNotes": { "type": "string", "description": "§5.1 自定义补充:作者改编意图自由文本(描述所选范围想怎么改);下游据此判断改哪些维度并定点替换。缺省=忠实把原 IP 转化为目标品类叙事" },
+    "targetUnits": { "type": "number", "description": "可选,默认切分时'每游戏单元最小单元数'(默认 25,非游戏单元个数);传 gameUnitPlan 时忽略" },
+    "complexity": { "type": "number", "description": "可选,目标复杂度 1-5" },
+    "runGeneration": { "type": "boolean", "description": "是否真正跑生成管线,默认 false(仅理解+改编)" },
+    "maxGameUnits": { "type": "number", "description": "可选,最多生成多少个游戏单元" },
+    "pipelineFamily": { "type": "string", "enum": ["rpg", "vn"], "description": "可选,生成管线族" },
+    "tier": { "type": "string", "description": "可选,透传生成管线 tier" },
+    "generationMode": { "type": "string", "description": "可选,透传生成管线 mode" },
+    "routeGroup": { "type": "string", "enum": ["planning", "narrative"], "description": "可选,ROUTING 路由组(§5.1),与主管线对齐" },
+    "genreCode": { "type": "string", "description": "可选,品类编码(如 rpg-jrpg/adv-interactive);决定下游 vn/rpg 生成管线" },
+    "model": { "type": "string", "description": "可选,覆盖默认 LLM 模型" }
+  }
+}

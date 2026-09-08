@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["runId"],
+  "additionalProperties": false,
+  "properties": {
+    "runId": {
+      "type": "string",
+      "description": "Run ID returned by start-pipeline"
+    },
+    "includeResult": {
+      "type": "boolean",
+      "default": false,
+      "description": "When true and run is completed, fetch and include the full NarrativeContext result"
+    }
+  }
+}

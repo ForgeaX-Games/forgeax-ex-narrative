@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["runId"],
+  "additionalProperties": false,
+  "description": "生成 scoped IP DNA(§5 步骤4,仅提取不跑下游生成)。消费已确认的裁剪范围/单元/维度。",
+  "properties": {
+    "runId": { "type": "string", "description": "运行 id(=时间戳_故事名)" },
+    "pipelineFamily": { "type": "string", "enum": ["rpg", "vn"], "description": "可选,生成管线族" },
+    "tier": { "type": "string", "description": "可选,透传生成管线 tier" },
+    "generationMode": { "type": "string", "description": "可选,透传生成管线 mode" },
+    "complexity": { "type": "number", "description": "可选,目标复杂度 1-5" },
+    "maxGameUnits": { "type": "number", "description": "可选,最多处理多少个游戏单元" },
+    "equipOperators": { "type": "boolean", "description": "为每个游戏单元装备三视角算子并消费,默认 false" },
+    "model": { "type": "string", "description": "可选,覆盖默认 LLM 模型" },
+    "async": { "type": "boolean", "description": "true 立即返回 jobId,轮询 ip-dna-get-job" }
+  }
+}

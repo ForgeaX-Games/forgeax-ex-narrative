@@ -1,0 +1,180 @@
+/* =============================================================================
+   ForgeaX Design Tokens — vendored subset
+   Source: packages/interface/src/styles/primitive.css + tokens.css
+   Purpose: Align narrative iframe styles with the host Studio theme.
+   ============================================================================= */
+:root {
+
+  /* ── primitive / neutral ──────────────────────────────────────────────── */
+  --prim-color-neutral-0:    #FFFFFF;
+  --prim-color-neutral-50:   #F2F2F2;
+  --prim-color-neutral-100:  #E6E6E6;
+  --prim-color-neutral-200:  #CCCCCC;
+  --prim-color-neutral-300:  #B3B3B3;
+  --prim-color-neutral-400:  #999999;
+  --prim-color-neutral-500:  #808080;
+  --prim-color-neutral-550:  #737373;
+  --prim-color-neutral-600:  #666666;
+  --prim-color-neutral-700:  #4D4D4D;
+  --prim-color-neutral-750:  #404040;
+  --prim-color-neutral-800:  #333333;
+  --prim-color-neutral-850:  #242424;
+  --prim-color-neutral-900:  #191919;
+  --prim-color-neutral-950:  #0D0D0D;
+  --prim-color-neutral-1000: #000000;
+
+  /* ── primitive / lime (brand) ─────────────────────────────────────────── */
+  --prim-color-lime-50:  #FCFFF0;
+  --prim-color-lime-100: #F6FFD8;
+  --prim-color-lime-200: #EBFFA8;
+  --prim-color-lime-300: #DFFF78;
+  --prim-color-lime-400: #D4FF48;
+  --prim-color-lime-500: #B1D43C;
+  --prim-color-lime-600: #8DAA30;
+  --prim-color-lime-700: #6A7F24;
+  --prim-color-lime-800: #465418;
+  --prim-color-lime-900: #232A0C;
+  --prim-color-lime-950: #111406;
+
+  /* ── primitive / orange ───────────────────────────────────────────────── */
+  --prim-color-orange-300: #FFC481;
+  --prim-color-orange-400: #FFB056;
+  --prim-color-orange-500: #FF9C2A;
+  --prim-color-orange-600: #CB7C21;
+  --prim-color-orange-700: #975C19;
+  --prim-color-orange-800: #633C10;
+
+  /* ── primitive / blue ─────────────────────────────────────────────────── */
+  --prim-color-blue-300: #8BB5FA;
+  --prim-color-blue-400: #639CF8;
+  --prim-color-blue-500: #3B82F6;
+  --prim-color-blue-700: #234D91;
+  --prim-color-blue-900: #0B182D;
+
+  /* ── primitive / green ────────────────────────────────────────────────── */
+  --prim-color-green-400: #4FD17F;
+  --prim-color-green-500: #22C55E;
+  --prim-color-green-600: #1B9D4B;
+  --prim-color-green-800: #0D4C24;
+
+  /* ── primitive / red ──────────────────────────────────────────────────── */
+  --prim-color-red-400: #F26A6A;
+  --prim-color-red-500: #EF4444;
+  --prim-color-red-600: #BE3636;
+  --prim-color-red-800: #5C1A1A;
+
+  /* ── primitive / yellow ───────────────────────────────────────────────── */
+  --prim-color-yellow-400: #EEC33A;
+  --prim-color-yellow-500: #EAB308;
+  --prim-color-yellow-600: #BA8E06;
+
+  /* ── primitive / purple ───────────────────────────────────────────────── */
+  --prim-color-purple-300: #CC9BFA;
+  --prim-color-purple-400: #BA78F9;
+  --prim-color-purple-500: #A855F7;
+  --prim-color-purple-800: #412160;
+
+  /* ── primitive / teal ─────────────────────────────────────────────────── */
+  --prim-color-teal-300: #63EACF;
+  --prim-color-teal-400: #48FFCF;
+
+  /* ── primitive / typography ───────────────────────────────────────────── */
+  --prim-font-sans: "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
+  --prim-font-mono: "Fira Mono", "JetBrains Mono", "SF Mono", "Menlo", ui-monospace, monospace;
+
+  /* ── primitive / radius ───────────────────────────────────────────────── */
+  --prim-radius-0:    0px;
+  --prim-radius-2:    2px;
+  --prim-radius-4:    4px;
+  --prim-radius-6:    6px;
+  --prim-radius-8:    8px;
+  --prim-radius-12:  12px;
+  --prim-radius-16:  16px;
+  --prim-radius-24:  24px;
+  --prim-radius-full: 9999px;
+
+  /* ── primitive / space ────────────────────────────────────────────────── */
+  --prim-space-2:   2px;
+  --prim-space-4:   4px;
+  --prim-space-6:   6px;
+  --prim-space-8:   8px;
+  --prim-space-12: 12px;
+  --prim-space-16: 16px;
+
+  /* ═══ SEMANTIC LAYER ══════════════════════════════════════════════════ */
+
+  /* ── text ─────────────────────────────────────────────────────────────── */
+  --color-text-primary:             var(--prim-color-neutral-0);
+  --color-text-secondary:           rgba(255, 255, 255, 0.60);
+  --color-text-tertiary:            rgba(255, 255, 255, 0.30);
+  --color-text-disabled:            rgba(255, 255, 255, 0.20);
+  --color-text-on-bright-primary:   var(--prim-color-neutral-1000);
+  --color-text-on-bright-secondary: rgba(0, 0, 0, 0.60);
+
+  /* ── background ───────────────────────────────────────────────────────── */
+  --color-background-canvas:   var(--prim-color-neutral-950);
+  --color-background-base:     var(--prim-color-neutral-900);
+  --color-background-elevated: var(--prim-color-neutral-850);
+  --color-background-floating: var(--prim-color-neutral-800);
+
+  /* ── border ───────────────────────────────────────────────────────────── */
+  --color-border-subtle:  var(--prim-color-neutral-800);
+  --color-border-default: var(--prim-color-neutral-750);
+  --color-border-strong:  var(--prim-color-neutral-550);
+
+  /* ── brand ────────────────────────────────────────────────────────────── */
+  --color-brand-primary:       var(--prim-color-lime-400);
+  --color-brand-primary-light: var(--prim-color-lime-300);
+  --color-brand-primary-soft:  var(--prim-color-lime-700);
+  --color-brand-primary-hover: var(--prim-color-lime-300);
+  /* Shorthand used by runtime-sidebar / center-workspace */
+  --primary: var(--color-brand-primary);
+
+  /* ── accent ───────────────────────────────────────────────────────────── */
+  --color-accent-blue-default:   var(--prim-color-blue-400);
+  --color-accent-blue-soft:      var(--prim-color-blue-900);
+  --color-accent-green-default:  var(--prim-color-green-400);
+  --color-accent-green-soft:     var(--prim-color-green-800);
+  --color-accent-orange-default: var(--prim-color-orange-400);
+  --color-accent-orange-soft:    var(--prim-color-orange-800);
+  --color-accent-purple-default: var(--prim-color-purple-500);
+  --color-accent-purple-soft:    var(--prim-color-purple-800);
+  --color-accent-error-default:  var(--prim-color-red-400);
+  --color-accent-error-soft:     var(--prim-color-red-800);
+
+  /* ── status ───────────────────────────────────────────────────────────── */
+  --color-status-success: var(--prim-color-green-600);
+  --color-status-warning: var(--prim-color-yellow-600);
+  --color-status-error:   var(--prim-color-red-600);
+
+  /* ── divider ──────────────────────────────────────────────────────────── */
+  --color-divider-strong:  rgba(255, 255, 255, 0.15);
+  --color-divider-default: rgba(255, 255, 255, 0.10);
+  --color-divider-subtle:  rgba(255, 255, 255, 0.05);
+
+  /* ── interaction ──────────────────────────────────────────────────────── */
+  --color-interaction-hover:            rgba(255, 255, 255, 0.05);
+  --color-interaction-selected-brand:   rgba(212, 255, 72, 0.10);
+  --color-interaction-selected-neutral: rgba(255, 255, 255, 0.10);
+
+  /* ── overlay ──────────────────────────────────────────────────────────── */
+  --color-overlay-modal: rgba(0, 0, 0, 0.50);
+
+  /* ── motion ───────────────────────────────────────────────────────────── */
+  --motion-duration-instant: 120ms;
+  --motion-duration-fast:    200ms;
+  --motion-duration-base:    150ms;
+  --motion-duration-smooth:  190ms;
+  --motion-duration-panel:   220ms;
+  --motion-ease-out:      cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-ease-spring:   cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-ease-standard: ease;
+
+  /* ── 两栏标题带 ───────────────────────────────────────────────────────────
+     左右是两个各自独立的 iframe，横向对不齐全靠这三个数写死。
+     顶层（叙事工坊 / 创作空间）、第二层（分区名 / 工具组）、第三层（路径 / 注释）
+     三条带在两侧必须同高，否则第四层的内容起点会错开，中缝一看就断。 */
+  --pane-head-h:  51px;
+  --pane-band2-h: 44px;
+  --pane-band3-h: 26px;
+}

@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "required": ["entryKey"],
+  "properties": {
+    "entryKey": {
+      "type": "string",
+      "description": "条目键（任务的磁盘目录名）；不是 runId —— runId 是内存态，重启即失效"
+    },
+    "pipelineId": {
+      "type": "string",
+      "description": "只看某条泳道；缺省给整个条目的定稿清单"
+    }
+  },
+  "additionalProperties": false
+}

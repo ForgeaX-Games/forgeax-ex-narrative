@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "required": ["entryKey", "assets"],
+  "properties": {
+    "entryKey": { "type": "string" },
+    "assets": {
+      "type": "array",
+      "description": "作者已确认为定稿的产物；不在此列表里的落盘文件都只是原料或中间产物",
+      "items": { "$ref": "./asset-ref.schema.json" }
+    }
+  }
+}

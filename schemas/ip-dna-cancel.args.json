@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["jobId"],
+  "additionalProperties": false,
+  "description": "取消生产(§5.1):取消正在运行的 IP DNA 异步任务。",
+  "properties": {
+    "jobId": { "type": "string", "description": "任务 id(由 async 阶段门返回)" }
+  }
+}

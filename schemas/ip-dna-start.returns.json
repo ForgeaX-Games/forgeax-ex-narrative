@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["story_timestamp", "title", "node_count", "game_units"],
+  "additionalProperties": true,
+  "description": "同步模式返回 IP DNA 理解+改编摘要（蓝图 §5）。默认仅产出 IP DNA + 改编指令 + 生成输入（runGeneration=false）。",
+  "properties": {
+    "story_timestamp": { "type": "string", "description": "贯穿 input→output 的故事主键时间戳" },
+    "title": { "type": "string", "description": "故事标题" },
+    "media_type": { "type": "string", "enum": ["book", "comic", "video", "picture", "mixed"], "description": "输入媒体类型" },
+    "node_count": { "type": "number", "description": "IP DNA 层级树节点数" },
+    "directive": { "description": "改编指令（结构化创作方针）" },
+    "extraction_quality": { "description": "D3 提取质量闸门结果（§14.2）：层级连通/三件套齐全/核心要素/五大类算子覆盖统计；非阻断。" },
+    "game_units": {
+      "type": "array",
+      "description": "改编出的游戏单元列表（默认仅产出生成输入，不一定真跑生成）",
+      "items": {
+        "type": "object",
+        "properties": {
+          "index": { "type": "number", "description": "游戏单元序号" },
+          "leaf_ids": { "type": "array", "items": { "type": "string" }, "description": "该单元覆盖的叶子层级节点 id" },
+          "operator_count": { "type": "number", "description": "该单元算子池规模" },
+          "generation_input": { "description": "喂给生成管线的输入种子（GenerationSeed）" },
+          "output_dir": { "type": "string", "description": "若已生成,输出目录名(basename)" },
+          "generated": { "type": "boolean", "description": "该单元是否真正跑过生成管线" }
+        }
+      }
+    }
+  }
+}

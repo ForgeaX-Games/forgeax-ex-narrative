@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "取消结果:任务 id 与取消后状态(cancelled)。",
+  "properties": {
+    "jobId": { "type": "string", "description": "任务 id" },
+    "status": { "type": "string", "description": "取消后任务状态(通常为 cancelled;已完成则保持 completed)" }
+  }
+}

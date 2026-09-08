@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["exported", "dir", "files"],
+  "properties": {
+    "exported": {
+      "type": "integer",
+      "description": "Number of files exported"
+    },
+    "dir": {
+      "type": "string",
+      "description": "Target directory where files were written"
+    },
+    "files": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "List of exported file paths"
+    }
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "narrative.control",
+  "description": "Left-pane control panel snapshot: routing config + running state",
+  "type": "object",
+  "properties": {
+    "tier": {
+      "type": ["string", "null"],
+      "enum": ["tier1", "tier2", "tier3", "tier4", null],
+      "description": "Selected narrative tier, null if auto-detect"
+    },
+    "mode": {
+      "type": ["string", "null"],
+      "description": "Selected pipeline mode, null if using tier default"
+    },
+    "autoDetect": {
+      "type": "boolean",
+      "description": "Whether auto genre/tier detection is enabled"
+    },
+    "userInput": {
+      "type": ["string", "null"],
+      "description": "Current text in the story input box (may be partial draft)"
+    },
+    "runningRunId": {
+      "type": ["string", "null"],
+      "description": "Run ID of the currently executing pipeline, null if idle"
+    },
+    "runningEntryKey": {
+      "type": ["string", "null"],
+      "description": "Output directory key of the running pipeline"
+    },
+    "activeEntryKey": {
+      "type": ["string", "null"],
+      "description": "History entry currently being viewed"
+    },
+    "activeEntryStatus": {
+      "type": ["string", "null"],
+      "enum": ["completed", "running", "interrupted", null],
+      "description": "Persisted entry status; null = never run"
+    },
+    "activeCanResume": {
+      "type": "boolean",
+      "description": "Whether a checkpoint exists for this entry (narrative:resume-pipeline will work)"
+    },
+    "state": {
+      "type": "string",
+      "enum": ["pending", "running", "paused", "interrupted", "completed"],
+      "description": "What the UI shows. `paused` = interrupted WITH a checkpoint (a display state, not a persisted one); `interrupted` = no checkpoint, must start over"
+    },
+    "primary": {
+      "type": "string",
+      "enum": ["start", "resume", "regen", "none"],
+      "description": "What the single primary button does right now — mirror this instead of re-deriving it from activeEntryStatus"
+    },
+    "cancelEnabled": {
+      "type": "boolean",
+      "description": "Whether cancel (= pause, keeps the checkpoint) is available"
+    }
+  }
+}

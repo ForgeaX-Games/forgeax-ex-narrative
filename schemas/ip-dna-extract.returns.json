@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": true,
+  "description": "提取结果摘要:改编指令 + 质量闸门 + 游戏单元(async 时为 jobId)。",
+  "properties": {
+    "story_timestamp": { "type": "string" },
+    "title": { "type": "string" },
+    "media_type": { "type": "string" },
+    "node_count": { "type": "number" },
+    "directive": { "type": "object", "description": "改编指令(裁剪范围/游戏单元/维度)" },
+    "extraction_quality": { "type": "object", "description": "提取质量闸门(结构连通/三件套/算子统计)" },
+    "game_units": { "type": "array", "description": "游戏单元摘要" },
+    "jobId": { "type": "string", "description": "async 时的任务 id" },
+    "status": { "type": "string", "description": "async 时的任务状态" }
+  }
+}

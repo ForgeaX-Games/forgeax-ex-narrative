@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["runId"],
+  "additionalProperties": false,
+  "properties": {
+    "runId": {
+      "type": "string",
+      "description": "Run ID of a completed pipeline run"
+    },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,40}$",
+      "description": "Game slug for the output path. Defaults to '_default'."
+    },
+    "targetDir": {
+      "type": "string",
+      "description": "Explicit export directory. Overrides slug-based default path (.forgeax/games/<slug>/narrative/)."
+    }
+  }
+}

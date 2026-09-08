@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["files"],
+  "additionalProperties": false,
+  "description": "IP 半自动阶段门①:摄入+标准化+建树(含干扰项过滤),停在确认裁剪范围前。",
+  "properties": {
+    "files": {
+      "type": "array",
+      "description": "输入文件(至少一个)。三种给法任选:path 工程内路径(聊天附件走这条)、content 文本、contentBase64 二进制",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "anyOf": [
+          { "required": ["path"] },
+          { "required": ["content"] },
+          { "required": ["contentBase64"] }
+        ],
+        "properties": {
+          "path": { "type": "string", "description": "工程内相对路径(聊天附件/工作区文件首选此项:docx 等二进制无需自行 base64,由插件读盘转换)。越出工程根目录会被拒绝" },
+          "fileName": { "type": "string", "description": "文件名(含扩展名);给了 path 时缺省取路径末段" },
+          "content": { "type": "string", "description": "UTF-8 文本内容(与 contentBase64 二选一)" },
+          "contentBase64": { "type": "string", "description": "base64 内容(图片/视频/docx/压缩包等)" },
+          "encoding": { "type": "string", "enum": ["utf8", "base64-docx"], "description": "可选,docx 走 base64-docx" },
+          "fileType": { "type": "string", "description": "MIME 类型,默认 text/plain;给了 path 时按扩展名推断" },
+          "role": { "type": "string", "description": "可选,文件角色标注" }
+        }
+      }
+    },
+    "title": { "type": "string", "description": "可选,故事标题(缺省取首文件名)" },
+    "decompose": { "type": "boolean", "description": "超体量时执行拆解闭环(再标准化),默认 false" },
+    "model": { "type": "string", "description": "可选,覆盖默认 LLM 模型" },
+    "async": { "type": "boolean", "description": "true 立即返回 jobId,轮询 ip-dna-get-job 取层级树摘要" },
+    "storyTimestamp": { "type": "string", "description": "可选,指定完整故事时间戳(续跑/对齐 jobId)" }
+  }
+}

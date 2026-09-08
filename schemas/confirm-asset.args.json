@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "required": ["entryKey", "path"],
+  "properties": {
+    "entryKey": { "type": "string", "description": "条目键（任务的磁盘目录名）" },
+    "path": {
+      "type": "string",
+      "description": "要确认的产物，`<group>/<相对路径>`，取自 narrative:list-files"
+    },
+    "pipelineId": {
+      "type": "string",
+      "description": "泳道；缺省 = 主管线。次管线产物必须带上，否则会与主管线同名产物互相顶掉"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "钉住这一稿；缺省表示跟随最新"
+    },
+    "confirmed": {
+      "type": "boolean",
+      "description": "false 表示撤销确认；缺省视为确认"
+    }
+  },
+  "additionalProperties": false
+}

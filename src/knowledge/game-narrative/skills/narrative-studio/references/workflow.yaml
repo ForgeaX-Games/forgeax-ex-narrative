@@ -1,0 +1,173 @@
+# narrative-studio 工作流定义
+# 用途: 展示叙事设计工作室的完整设计流程，供 Agent 理解执行顺序和数据流
+
+name: narrative-studio-pipeline
+version: "1.0"
+description: 叙事设计工作室 - 从前提到完整叙事框架的系统化设计流程
+
+# 工作流状态（全局上下文）
+state:
+  premise: null
+  characters: []
+  world: null
+  narrative_context: {}
+
+# 工作流步骤定义
+steps:
+  - id: premise_design
+    name: 前提设计
+    module: PremiseSkill
+    description: 建立故事的核心前提、主角、目标和戏剧问题
+    input:
+      - name: genre
+        type: string
+        description: 故事类型（如"赛博朋克"）
+      - name: emotion
+        type: string
+        description: 核心情感基调（如"忧郁"）
+      - name: keywords
+        type: array
+        description: 关键词列表（如["霓虹", "雨夜", "记忆"]）
+    output:
+      - name: premise
+        type: object
+        schema:
+          premise_statement: string    # 前提陈述
+          protagonist_brief: string    # 主角简述
+          objective: string            # 核心目标
+          antagonistic_force: string   # 对抗力量
+          dramatic_question: string    # 戏剧问题
+    side_effect: 存入 state.premise
+
+  - id: character_design
+    name: 角色设计
+    module: CharacterSkill
+    description: 深度构建角色的内在需求、外在目标和成长弧线
+    depends_on: [premise_design]
+    input:
+      - name: role
+        type: string
+        default: "主角"
+        description: 角色定位
+      - name: premise
+        type: object
+        source: state.premise
+        description: 前提设计结果（用于角色与主题的关联）
+    output:
+      - name: character
+        type: object
+        schema:
+          name: string              # 角色名
+          internal_need: string     # 内在需求（如"归属感"）
+          external_want: string     # 外在目标（继承自 premise.objective）
+          conflict: string          # 内外冲突
+          arc_type: string          # 弧线类型: "上升" | "下降" | "平坦" | "复杂"
+    side_effect: 追加到 state.characters
+    repeatable: true  # 可多次调用以创建多个角色
+
+  - id: world_building
+    name: 世界观构建
+    module: WorldSkill
+    description: 构建故事发生的世界设定
+    depends_on: [premise_design]
+    parallel_with: [character_design]  # 可与角色设计并行
+    input:
+      - name: setting
+        type: string
+        description: 世界背景（如"近未来废土"）
+    output:
+      - name: world
+        type: object
+        schema:
+          world_name: string         # 世界名称
+          physical_rules: string     # 物理规则/特殊设定
+          social_structure: string   # 社会结构
+    side_effect: 存入 state.world
+
+  - id: synthesize
+    name: 叙事整合
+    module: NarrativeSynthesizer
+    description: 将前提、角色、世界观整合为完整叙事框架
+    depends_on: [premise_design, character_design, world_building]
+    input:
+      - name: premise
+        source: state.premise
+      - name: characters
+        source: state.characters
+      - name: world
+        source: state.world
+    output:
+      - name: narrative_context
+        type: object
+        schema:
+          premise: object
+          characters: array
+          world: object
+          thematic_throughline: string  # 主题贯穿线
+          narrative_structure: string   # 叙事结构建议
+    side_effect: 存入 state.narrative_context
+
+# 流程图 (Mermaid 语法)
+flowchart: |
+  graph TD
+    A[premise_design<br/>前提设计] --> B[character_design<br/>角色设计]
+    A --> C[world_building<br/>世界观构建]
+    B --> D[synthesize<br/>叙事整合]
+    C --> D
+    D --> E[输出完整叙事框架]
+    
+    style A fill:#e1f5fe
+    style D fill:#c8e6c9
+
+# 执行模式
+execution_modes:
+  - name: full
+    description: 完整流程，依次执行所有步骤
+    steps: [premise_design, character_design, world_building, synthesize]
+  
+  - name: character_focus
+    description: 专注角色设计，跳过世界观
+    steps: [premise_design, character_design]
+  
+  - name: world_focus
+    description: 专注世界观构建，跳过角色
+    steps: [premise_design, world_building]
+
+# 示例执行
+example:
+  input:
+    genre: "赛博朋克"
+    emotion: "忧郁"
+    keywords: ["霓虹", "雨夜", "记忆"]
+    setting: "近未来废土"
+  trace:
+    - step: premise_design
+      output:
+        premise_statement: "在赛博朋克背景下，一个寻找忧郁的故事。"
+        protagonist_brief: "孤独的幸存者"
+        objective: "寻找失落的记忆"
+        antagonistic_force: "遗忘的阴影"
+        dramatic_question: "他能否在黑暗降临前记起真相？"
+    
+    - step: character_design
+      input: { role: "主角" }
+      output:
+        name: "K"
+        internal_need: "归属感"
+        external_want: "寻找失落的记忆"
+        conflict: "真相可能会摧毁他现有的平静"
+        arc_type: "上升"
+    
+    - step: world_building
+      output:
+        world_name: "Neo-Elysium"
+        physical_rules: "重力异常区"
+        social_structure: "AI 统治的阶级社会"
+    
+    - step: synthesize
+      output:
+        premise: "..."
+        characters: ["..."]
+        world: "..."
+        thematic_throughline: "记忆与身份的探索"
+        narrative_structure: "三幕剧 + 非线性闪回"
