@@ -20,6 +20,7 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { resolveNarrativeRoot } from "../runtime/artifact-root.js";
 
 export interface ProjectAsset {
   id: string;
@@ -52,7 +53,9 @@ export interface NarrativeProject {
 
 const PROJECTS_DIRNAME = "projects";
 
-function projectsDir(cwd = process.cwd()): string {
+// 与 output/ 同级，挂在同一个双模式产物根下（src/runtime/artifact-root.ts）：
+// 插件模式随叙事一起落进平台项目目录，不因为项目库另起一套落盘规则就掉队。
+function projectsDir(cwd = resolveNarrativeRoot()): string {
   return path.join(cwd, PROJECTS_DIRNAME);
 }
 

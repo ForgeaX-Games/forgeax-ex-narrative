@@ -14,7 +14,7 @@ trigger: /narrative
 
 默认行为：所有 Tier 走 `design_auto`（先跑策划 D0-D4，再根据需求矩阵动态追加叙事步骤）。
 
-## 工具集（共 30 个，按用途分组）
+## 工具集（共 40 个，按用途分组）
 
 ### 核心叙事管线（最常用）
 
@@ -28,6 +28,26 @@ trigger: /narrative
 | `narrative:regenerate-step` | 重生成指定步骤 | `sourceDir`, `fromStepId`, `userInstructions?` |
 | `narrative:export-result` | 导出结果到项目目录 | `runId`, `slug?`, `targetDir?` |
 | `narrative:load-history` | 加载某次运行完整结果 | `key` |
+| `narrative:create-entry` | 建/改条目 —— 与界面入口节点同一份 `_entry.json`；**先建条目再带 `entryKey` 开跑** | `key`(必填), 其余路由参数可选 |
+| `narrative:run-seat` | 只跑二十席里的**一席**，不走整条管线；给 `entryKey` 才落盘 | `seatId`(必填), `userInput?`, `inputs?`, `entryKey?` |
+
+### 填参前先查（避免瞎猜 code 与席位 id）
+
+| tool id | 用途 |
+|---|---|
+| `narrative:list-genres` | 全部品类：`code` / 名称 / tier / 叙事比重 / 模板 —— 填 `genreCode` 前必查 |
+| `narrative:list-modes` | 各 tier 可用的运行模式 / 模板及步骤数 |
+| `narrative:list-axes` | 三轴词表（叙事类型 / 题材 / 结构）—— 填 `storyType`、`storyTheme` 前必查 |
+| `narrative:list-seats` | 二十席清单：`id` / kind / `canRunStandalone` / 单跑还缺什么输入 —— 调 `run-seat` 前必查 |
+
+### 定稿与专属团队
+
+| tool id | 用途 |
+|---|---|
+| `narrative:list-assets` | 列某条目里作者**已确认定稿**的产物 —— 下游生成只该引用这张表里的文件 |
+| `narrative:confirm-asset` | 确认 / 撤销确认一份产物，可钉版本号（缺省跟随最新） |
+| `narrative:list-teams` | 列自定义专属创作团队；只有 `ready` 的能带进生成 |
+| `narrative:get-team` | 看某团队的蒸馏状态 / 风格签名 / 禁区 / 各席技能 |
 
 ### IP DNA 改编生成（从已有 IP 作品生成，见 README 同名章节）
 
@@ -44,9 +64,19 @@ trigger: /narrative
 | `narrative:ip-dna-get-job` / `ip-dna-cancel` | 异步任务状态查询 / 取消 | `jobId` |
 | `narrative:ip-dna-analyze-impact` | IP DNA 编辑影响面分析 | `runId` |
 
-### 查询 / 文件 / 编辑辅助
+### 读产物 / 改稿 / 评审
 
-`narrative:list-modes`、`list-genres`、`get-pipeline-nodes`、`get-story-tree`、`get-ip-dna`、`list-files`、`read-file`、`analyze-impact`、`get-stale-steps`、`get-review`、`set-review`。
+| tool id | 用途 |
+|---|---|
+| `narrative:list-files` / `read-file` | 列某次运行的产出文件 / 读其中一份（自动截断防爆上下文） |
+| `narrative:get-story-tree` | 读叙事树结构（分层节点），把握整体骨架 |
+| `narrative:get-pipeline-nodes` | 读**活动中** run 的各步节点与状态（内存态，重启即失效） |
+| `narrative:get-ip-dna` | 按 runId 读 IP DNA 层级树摘要 |
+| `narrative:save-step-edit` | 改稿落盘（与界面文本视图同一端点）；原稿自动存 `_original/`；**省略 `editedContent` 就只回读不写盘** |
+| `narrative:restore-original` | 把某步/某节点还原为模型原稿，并撤掉编辑账本那一条 |
+| `narrative:get-stale-steps` | 给定起始步，列出会因其变更而过期、需重生成的下游 |
+| `narrative:analyze-impact` | 重生成**前**预判：对若干拟改动做差异 + 影响面分析 |
+| `narrative:get-review` / `set-review` | 读 / 写各步的人工评审结论（`approved` / `rejected` / `pending`）与反馈 |
 
 ## 意图→路由决策表
 
@@ -64,6 +94,30 @@ trigger: /narrative
 | "帮我写互动影游剧本" | narrative | `vn_script` | 影游剧本（止于 G-02 剧本创作） |
 | "帮我做互动影游分镜" | narrative | `vn_storyboard_mode` | 影游分镜（含 G-03 分镜设计） |
 | "帮我做一个赛博朋克 RPG" | planning | `design_auto` + genreCode | 指定品类走策划全量 |
+
+## 对话里的 `@` 引用（narrative-ref）
+
+用户可以从叙事界面把一样东西 `@` 进对话栏。插进来的文本形如：
+
+```
+@叙事生成配置助手（入口） [narrative-ref kind=entry entry=new · settle the requirement with …]
+```
+
+方括号里是**给你看的**机器载荷（键名固定 ASCII，不随界面语言变），三类：
+
+| `kind` | 用户指的是 | 你该做什么 |
+|---|---|---|
+| `entry` | 一个任务的初始需求 | `entry=new` → 问清需求后 `create-entry`（不传 `key`）；`entry=<key>` → 带该 `key` 改这条。**先把需求与路由定下来并让用户确认，再谈开跑** |
+| `role` | 一位席位 / 品类专家 / 自定义团队成员 | 按 `catalog` / `step` / `strategy` / `team` 调对应的 `narrative:*`（`start-pipeline` / `regenerate-step` / `ip-dna-*`） |
+| `artifact` | 一份落盘产物 | `narrative:read-file({ runId: <sourceDir>, filePath: <path> })` |
+
+`kind=entry` 与用户直接打一段需求进对话栏，在「新任务」这一情形下是同一件事。它多说
+的是另外两件裸文本说不清的：这一轮要**另起一个任务**（`entry=new`），还是要**回去改
+某个已有任务**的初始需求（`entry=<key>`）。这也是 `create-entry` 的必填项只有 `key`
+的原因。
+
+引用与节点画布上的入口是**同一把键权**，落的是同一份 `_entry.json`：画布经
+`/entry/start` 写，你经 `create-entry` 写。所以不要在 `create-entry` 之外另造一份配置。
 
 ## 调用前须知
 
@@ -138,7 +192,9 @@ narrative:regenerate-step({
 
 ## 写入约定
 
-所有导出资产落到 host project root 下的 `.forgeax/games/<slug>/narrative/`。包含：
+作为平台扩展运行时（你看到这份 skill 就是这种情形），所有导出资产落到 host project root 下的
+`.forgeax/games/<slug>/narrative/`；同一份代码独立运行时落 `process.cwd()/output`，
+两者是**两份独立磁盘目录**（判定在 `src/runtime/artifact-root.ts`，README 有专节）。包含：
 
 - 按步骤编号的 markdown / json 文件（如 `01_worldview.md`、`03_story_framework.json`）
 - `full_result.json`（完整 NarrativeContext 快照）

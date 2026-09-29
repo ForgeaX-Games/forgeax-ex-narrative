@@ -85,9 +85,9 @@ function DetroitEdgeRaw({
   const shouldAnimate = enterDelay !== null && enterDelay >= 0;
 
   const edgeColor =
-    status === "running" ? (isOuter ? "rgba(255,107,53,0.90)" : "rgba(255,107,53,0.70)")
-    : status === "pending" ? (isOuter ? "rgba(77,255,160,0.14)" : "rgba(77,255,160,0.08)")
-    : isOuter ? "rgba(77,255,160,0.65)" : "rgba(77,255,160,0.45)";
+    status === "running" ? (isOuter ? "color-mix(in srgb, var(--color-status-warning) 90%, transparent)" : "color-mix(in srgb, var(--color-status-warning) 70%, transparent)")
+    : status === "pending" ? (isOuter ? "color-mix(in srgb, var(--color-status-success) 14%, transparent)" : "color-mix(in srgb, var(--color-status-success) 8%, transparent)")
+    : isOuter ? "color-mix(in srgb, var(--color-status-success) 65%, transparent)" : "color-mix(in srgb, var(--color-status-success) 45%, transparent)";
 
   const onPath = data?.onOptimalPath === true && status !== "pending";
   // 主线在支线之上：粗一档 + 一层底光。颜色不换——换色会让人误读成另一种状态。
@@ -103,7 +103,7 @@ function DetroitEdgeRaw({
     return (
       <g>
         {(isOuter || onPath) && status !== "pending" && (
-          <path d={d} fill="none" stroke={onPath ? "rgba(255,214,102,0.22)" : "rgba(77,255,160,0.16)"}
+          <path d={d} fill="none" stroke={onPath ? "color-mix(in srgb, var(--color-status-warning) 22%, transparent)" : "color-mix(in srgb, var(--color-status-success) 16%, transparent)"}
             strokeWidth={strokeW + 6} strokeLinecap="round" pathLength={1}
             style={{
               pointerEvents: "none",
@@ -131,7 +131,7 @@ function DetroitEdgeRaw({
         </marker>
       </defs>
       {(isOuter || onPath) && status !== "pending" && (
-        <path d={d} fill="none" stroke={onPath ? "rgba(255,214,102,0.22)" : "rgba(77,255,160,0.16)"}
+        <path d={d} fill="none" stroke={onPath ? "color-mix(in srgb, var(--color-status-warning) 22%, transparent)" : "color-mix(in srgb, var(--color-status-success) 16%, transparent)"}
           strokeWidth={strokeW + 6} strokeLinecap="round" style={{ pointerEvents: "none" }} />
       )}
       <path id={id} d={d} fill="none" stroke={edgeColor} strokeWidth={strokeW}

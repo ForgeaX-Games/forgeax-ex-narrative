@@ -131,15 +131,16 @@ export const DETAIL_PLAN_COMPOSER: PromptComposer = {
     strategy: STRATEGY_SLOT_BLOCK,
     ip_dna: IP_DNA_SLOT_BLOCK,
     craft: TOPOLOGY_DISCIPLINE,
-    style_guide: "{{SKILL.style_guide}}",
-    constraints: "{{SKILL.constraints}}",
   },
+  // 品类风格/约束不再单开 style_guide/constraints 块——genreStyleProvider 已注册进
+  // DEFAULT_PROVIDERS，同一份 skill.slots 内容随 strategy 段的 strategy_genre 子槽
+  // 一起送出，不必（也不该）在这里再用 {{SKILL.*}} 占位符重复注入一遍。
   systemBlockOrder: [
-    "base", "strategy", "ip_dna", "craft", "style_guide", "constraints",
+    "base", "strategy", "ip_dna", "craft",
     "cot", "priority_chain", "mode_source", "concept_mapping", "self_check",
   ],
   userBlockOrder: [],
-  skillSlots: ["style_guide", "constraints"],
+  skillSlots: [],
 };
 
 export const DETAIL_FILL_COMPOSER: PromptComposer = {
@@ -149,8 +150,6 @@ export const DETAIL_FILL_COMPOSER: PromptComposer = {
     strategy: STRATEGY_SLOT_BLOCK,
     ip_dna: IP_DNA_SLOT_BLOCK,
     craft: TOPOLOGY_DISCIPLINE,
-    style_guide: "{{SKILL.style_guide}}",
-    constraints: "{{SKILL.constraints}}",
     // F3：四项结构性缺口，材料换成 Step1.5 按 L1 父节点分组填充时实际吃到的那一批。
     priority_chain: inputPriorityChain([
       "本组节点所属的大纲节点（名称/叙事阶段/内容）——本组节点必须在它的范围内展开，不越界引入新事件",
@@ -180,11 +179,11 @@ export const DETAIL_FILL_COMPOSER: PromptComposer = {
     ]),
   },
   systemBlockOrder: [
-    "base", "strategy", "ip_dna", "craft", "style_guide", "constraints",
+    "base", "strategy", "ip_dna", "craft",
     "priority_chain", "mode_source", "concept_mapping", "self_check",
   ],
   userBlockOrder: [],
-  skillSlots: ["style_guide", "constraints"],
+  skillSlots: [],
 };
 
 function buildStep1Prompt(ctx: NarrativeContext): string {
@@ -492,13 +491,11 @@ export const DETAIL_GAP_COMPOSER: PromptComposer = {
     base: STEP2_SYSTEM,
     strategy: STRATEGY_SLOT_BLOCK,
     ip_dna: IP_DNA_SLOT_BLOCK,
-    style_guide: "{{SKILL.style_guide}}",
-    constraints: "{{SKILL.constraints}}",
     output: STEP2_OUTPUT,
   },
-  systemBlockOrder: ["base", "strategy", "ip_dna", "style_guide", "constraints", "output"],
+  systemBlockOrder: ["base", "strategy", "ip_dna", "output"],
   userBlockOrder: [],
-  skillSlots: ["style_guide", "constraints"],
+  skillSlots: [],
 };
 
 function buildStep2Prompt(ctx: NarrativeContext, skeleton: SkeletonNode[], fillMap: Map<string, PartialFill>): string {

@@ -1118,7 +1118,7 @@ function PreferenceAnalysisView({ data }: { data: Record<string, unknown> }) {
                 <span className="wv-slot-val">
                   {String(v.user_preference ?? v.content ?? v.description ?? "")}
                   {v.entropy != null && (
-                    <span style={{ marginLeft: 8, fontSize: 10, color: "rgba(77,255,160,0.4)" }}>
+                    <span style={{ marginLeft: 8, fontSize: "var(--text-caption)", color: "color-mix(in srgb, var(--color-status-success) 40%, transparent)" }}>
                       H={String(Number(v.entropy).toFixed(2))}
                     </span>
                   )}
@@ -2044,9 +2044,12 @@ function FullSceneTreeView({ sceneMap }: { sceneMap: NarrativeContext["scene_map
 // Item Database (full view)
 // ══════════════════════════════════════════════════════════════════════════════
 
-const RARITY_COLORS: Record<string, string> = {
-  common: "#aaa", uncommon: "#3c3", rare: "#36f", epic: "#a6f", legendary: "#fa3",
-};
+/*
+ * 稀有度曾经是写死的五个色相（灰 / 绿 / 蓝 / 紫 / 橙）。改走 class，颜色在
+ * `index.css` 里按主题取值——五个单值 hex 两套主题拿到的是同一个颜色，浅色下
+ * #3c3 和 #6cf 压在白底上都读不清。同时色相换成了明暗档：稀有度是有序的，
+ * 「越稀有越重」说得通，而没人分得清紫比蓝稀有还是蓝比紫稀有。
+ */
 
 function FullItemDatabaseView({ items }: { items: Record<string, unknown>[] }) {
   const t = useT();
@@ -2080,9 +2083,7 @@ function FullItemDatabaseView({ items }: { items: Record<string, unknown>[] }) {
           >
             <div className="char-card-header" onClick={() => setExpanded(isOpen ? null : nodeId)}>
               <span className="char-toggle">{isOpen ? "▾" : "▸"}</span>
-              <span className="node-badge" style={{ color: RARITY_COLORS[rarity] ?? "#aaa" }}>
-                {rarity}
-              </span>
+              <span className={`node-badge rarity-${rarity}`}>{rarity}</span>
               <strong className="char-card-name">{nodeId}</strong>
               {category && <span className="char-card-occ">{category}</span>}
             </div>
@@ -2169,9 +2170,7 @@ function FullQuestGraphView({ questGraph }: { questGraph: NarrativeContext["ques
             <div className="char-header" onClick={() => setExpandedId(isOpen ? null : qid)}>
               <span className="char-toggle">{isOpen ? "▾" : "▸"}</span>
               <span className="char-name">{qname}</span>
-              <span className="node-badge" style={{
-                color: qtype === "main" ? "#fa3" : "#6cf",
-              }}>
+              <span className={`node-badge quest-${qtype === "main" ? "main" : "side"}`}>
                 {questTypeLabel(qtype)}
               </span>
               <span className="char-role">{String(quest.story_node_id ?? "")}</span>

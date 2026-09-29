@@ -43,9 +43,18 @@ export type PluginEnvKey =
   | "NARRATIVE_MODEL"
   | "SMALL_MODEL"
   | "NARRATIVE_PORT"
+  // 扩展 spawn 出来的服务是孤儿进程，靠这个值自行退出；Studio 托管时不注入。
+  | "NARRATIVE_IDLE_TIMEOUT_MS"
   | "NARRATIVE_AUTO_DEBUG"
   | "NARRATIVE_AGENT_DEBUG"
-  | "NARRATIVE_DISABLE_EVAL";
+  | "NARRATIVE_DISABLE_EVAL"
+  // 双模式路径映射（src/runtime/artifact-root.ts）：平台起独立进程时会注入这个
+  // 项目根；本插件只读它判定「是否处于插件模式」，不猜测、不派生。
+  | "FORGEAX_PROJECT_ROOT"
+  // 一把 key 都没配时借宿主 agent 的模型。两个值都由插件薄壳注入：薄壳跑在
+  // 宿主里，知道宿主的可执行文件在哪；本体不去猜。
+  | "NARRATIVE_LLM_BACKEND"
+  | "NARRATIVE_HOST_AGENT_CMD";
 
 /** Read a single allow-listed env value. The argument is a typed key so
  *  TypeScript blocks ad-hoc string lookups; this guarantees every consumer
@@ -76,4 +85,15 @@ export function getLlmProxyKey(): string {
  *  (NARRATIVE_MODEL > SMALL_MODEL > "gemini-2.5-pro"). */
 export function getDefaultModel(): string {
   return readPluginEnv("NARRATIVE_MODEL") ?? readPluginEnv("SMALL_MODEL") ?? "gemini-2.5-pro";
+}
+
+/**
+ * 借来的宿主 agent 可执行文件，没开这条路时为空。
+ *
+ * 两个变量都要对上才算开启：后端标记说明「这是有意选的」，命令说明「宿主在哪」。
+ * 只有其中一个时宁可当没开——一个说要借、却不知道向谁借的配置，是配错了。
+ */
+export function getHostAgentCommand(): string {
+  if (readPluginEnv("NARRATIVE_LLM_BACKEND") !== "host-agent") return "";
+  return readPluginEnv("NARRATIVE_HOST_AGENT_CMD")?.trim() ?? "";
 }

@@ -55,9 +55,12 @@ function resolveGenreCode(ctx: NarrativeContext): string | null {
  *
  * 三期换轴后归入 strategy_genre 子槽（品类技能包与品类策略卡讲的是同一件事）。
  *
- * ⚠️ 不在 DEFAULT_PROVIDERS 里：现有 composer 已经通过 {{SKILL.style_guide}} 等占位
- * 和 systemPromptAddition 末尾追加拿到了同一份技能包内容，默认注册会造成重复注入。
- * 等 composer 全部迁到八段骨架、撤掉自己的 SKILL 块之后，再把它加回默认集合。
+ * 已在 DEFAULT_PROVIDERS 里（M-F 单轨收敛）：吃策略卡的五个 composer
+ * （preference_summary / initial_plan / story_framework / outline_batch /
+ * detailed_outline 的全部 plan/fill/gap 变体）已撤掉各自的 `{{SKILL.style_guide}}`
+ * 等占位块与非空 `skillSlots` 声明，同一份技能包内容不再从两处进来。其余不吃
+ * 策略卡的 step（未声明 STRATEGY_SLOT_BLOCK，不会触发 buildSlotMap）继续走自己
+ * 原有的 SKILL 占位 + systemPromptAddition 末尾追加机制，不受这次收敛影响。
  */
 export const genreStyleProvider: FragmentProvider = {
   slot: "strategy_genre",
@@ -102,6 +105,10 @@ export const DEFAULT_PROVIDERS: readonly FragmentProvider[] = [
   relationsProvider,
   ledgerProvider,
   ...STRATEGY_PROVIDERS,
+  // genreStyleProvider 与 STRATEGY_PROVIDERS 里的 strategyGenreProvider 同插槽
+  // （strategy_genre），buildSlotMap 按 provider 顺序拼接、不覆盖——两者本就是不同
+  // 来源的内容（策略卡 vs 技能包），拼接而非互斥是设计本身，不是遗留冲突。
+  genreStyleProvider,
 ];
 
 // ─────────────────────────────────────────────────────────────────

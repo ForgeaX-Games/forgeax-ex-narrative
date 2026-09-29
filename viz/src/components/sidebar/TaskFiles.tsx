@@ -1,9 +1,11 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import {
   AtSign,
+  Check,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Crosshair,
   FileText,
   FolderPlus,
   History,
@@ -35,7 +37,9 @@ import {
   type ConfirmedAsset,
 } from "../../lib/assetConfirm";
 import { findCatalogItem } from "../../composer/composerCatalog";
-import { sendFileToComposer, sendRoleToComposer } from "../../lib/bridge";
+import { composerTarget, sendFileToComposer, sendRoleToComposer } from "../../lib/bridge";
+import { useMention } from "../../hooks/useMention";
+import { canLocateInContentBrowser, locateInContentBrowser } from "../../lib/locateArtifact";
 import { useNarrativeStore } from "../../store/narrativeStore";
 import { useT } from "../../i18n";
 
@@ -139,20 +143,35 @@ export function TaskFiles({
     return set;
   }, [projects, taskKey]);
 
+  const { flashed, mention } = useMention();
+  const toHost = composerTarget() === "host";
+
   const mentionAssistant = useCallback(
     (assistantId: string) => {
       const item = findCatalogItem(assistantId);
       if (!item) return;
       const label = t(item.labelKey) === item.labelKey ? item.label : t(item.labelKey);
-      sendRoleToComposer({
-        name: label,
-        category: item.category,
-        catalogId: item.id,
-        stepId: item.stepId,
-        modeId: item.modeId,
-      });
+      mention(`assistant:${assistantId}`, () =>
+        sendRoleToComposer({
+          name: label,
+          category: item.category,
+          catalogId: item.id,
+          stepId: item.stepId,
+          modeId: item.modeId,
+        }),
+      );
     },
-    [t],
+    [t, mention],
+  );
+
+  /** @ 按钮的即时反馈：送去哪、成没成，都只说实际发生的那一种。 */
+  const mentionTitle = useCallback(
+    (key: string, idle: string) => {
+      if (flashed?.key !== key) return t(idle);
+      if (flashed.delivery === "failed") return t("lib.copyFailed");
+      return t(flashed.delivery === "host" ? "lib.mentioned" : "lib.copied");
+    },
+    [flashed, t],
   );
 
   /**
@@ -228,19 +247,44 @@ export function TaskFiles({
         <button
           type="button"
           className="pi-at"
-          title={t("lib.mentionFile")}
-          aria-label={t("lib.mentionFile")}
+          title={mentionTitle(`file:${file.path}`, toHost ? "lib.mentionFile" : "lib.copyFile")}
+          aria-label={t(toHost ? "lib.mentionFile" : "lib.copyFile")}
           onClick={() =>
-            sendFileToComposer({
-              entryKey: taskKey,
-              path: file.path,
-              name: file.name,
-              contentType: file.type ?? undefined,
-            })
+            mention(`file:${file.path}`, () =>
+              sendFileToComposer({
+                entryKey: taskKey,
+                path: file.path,
+                name: file.name,
+                contentType: file.type ?? undefined,
+              }),
+            )
           }
         >
-          <AtSign size={10} aria-hidden />
+          {flashed?.key === `file:${file.path}` && flashed.delivery !== "failed" ? (
+            <Check size={10} aria-hidden />
+          ) : (
+            <AtSign size={10} aria-hidden />
+          )}
         </button>
+        {/* 定位到平台系统文件区（规范里资产右键三动作的第三项）。独立形态没有
+            文件区可定位，此时整个按钮不渲染，而不是渲染成一个点了没反应的死键。 */}
+        {canLocateInContentBrowser() && (
+          <button
+            type="button"
+            className="pi-at"
+            title={t("lib.locateFile")}
+            aria-label={t("lib.locateFile")}
+            onClick={() =>
+              void locateInContentBrowser({
+                entryKey: taskKey,
+                path: file.path,
+                name: file.name,
+              })
+            }
+          >
+            <Crosshair size={10} aria-hidden />
+          </button>
+        )}
         <button
           type="button"
           className="pi-card__open"

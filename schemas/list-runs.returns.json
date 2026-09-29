@@ -21,7 +21,20 @@
       "mode": { "type": "string" },
       "status": {
         "type": "string",
-        "enum": ["running", "completed", "failed", "interrupted", "unknown"]
+        "enum": ["config", "running", "completed", "failed", "interrupted", "unknown"]
+      },
+      "cancelled": {
+        "type": "boolean",
+        "description": "Manifest cancelled flag surfaced verbatim: true means the user stopped it on purpose, distinct from a real failure."
+      },
+      "awaitingConfirmation": {
+        "type": "boolean",
+        "description": "IP DNA stage gate only: the job finished standardizing and is parked waiting for scope confirmation, as opposed to still standardizing under the same status=\"config\"."
+      },
+      "platformStatus": {
+        "type": "string",
+        "enum": ["not_started", "executable", "running", "awaiting_confirmation", "completed", "failed", "cancelled"],
+        "description": "Read-only projection onto the platform's unified state language, derived from status/cancelled/canResume/controls/awaitingConfirmation. Not a second source of truth."
       },
       "startedAt": { "type": "string" },
       "completedAt": { "type": ["string", "null"] },

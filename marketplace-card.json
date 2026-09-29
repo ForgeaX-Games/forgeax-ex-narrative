@@ -1,7 +1,7 @@
 {
   "summary": {
-    "zh": "叙事工坊,AI 驱动的游戏叙事内容生成管线。它用 Tier + Mode 双层路由 + Planner 动态选步,自动适配不同品类的叙事深度,覆盖 117 个品类、11 个管线模板、20 席助手、29 种执行模式、6 种叙事原型,生成世界观→角色→剧情→对白的完整叙事。除从需求生成外,还支持 IP DNA 改编:上传已有小说/漫画/视频作品,标准化建树后提取叙事 DNA 并复用同一套管线改编成可玩叙事。可视化故事树、单步重新生成、查看运行状态与导出结果,并能把产出对接到 Kotone 的剧情产物。",
-    "en": "The Narrative Studio narrative runtime — an AI-driven game-narrative generation pipeline. Using two-layer Tier + Mode routing plus a dynamic planner, it adapts narrative depth per genre across 117 genres, 11 pipeline templates, 20 assistant seats, 29 execution modes and 6 narrative archetypes, generating a full world→characters→plot→dialogue narrative. Besides generating from a prompt, it also supports IP-DNA adaptation: upload an existing novel/comic/video, standardize it into a hierarchy, extract its narrative DNA and reuse the same pipeline to adapt it into playable narrative. It offers a story-tree view, per-step regeneration, run-status tracking and result export, and connects its output to Kotone's narrative artifacts."
+    "zh": "叙事工坊,AI 驱动的游戏叙事内容生成管线。它用 Tier + Mode 双层路由 + Planner 动态选步,自动适配不同品类的叙事深度,覆盖 117 个品类、9 个管线模板、20 席助手、29 种执行模式、6 种叙事原型,生成世界观→角色→剧情→对白的完整叙事。除从需求生成外,还支持 IP DNA 改编:上传已有小说/漫画/视频作品,标准化建树后提取叙事 DNA 并复用同一套管线改编成可玩叙事。改一处设定,它会沿依赖链标出哪些下游内容已经过期、需要重新生成,而不是让你自己去找。可视化故事树、单步重生成、逐段评审改稿、查看运行状态与导出结果,产出直接落进游戏项目目录。",
+    "en": "The Narrative Workshop — an AI-driven game-narrative generation pipeline. Using two-layer Tier + Mode routing plus a dynamic planner, it adapts narrative depth per genre across 117 genres, 9 pipeline templates, 20 assistant seats, 29 execution modes and 6 narrative archetypes, generating a full world -> characters -> plot -> dialogue narrative. Besides generating from a prompt, it also supports IP-DNA adaptation: upload an existing novel, comic or video, standardize it into a hierarchy, extract its narrative DNA and reuse the same pipeline to adapt it into playable narrative. Change one piece of the setting and it traces the dependency chain to tell you which downstream content went stale, instead of leaving you to hunt for it. Story-tree view, per-step regeneration, per-section review and editing, run-status tracking and export — results land straight in the game project directory."
   },
   "sections": [
     {
@@ -30,8 +30,8 @@
         "en": "Capabilities"
       },
       "body": {
-        "zh": "故事树可视化 · 单步重生成 · 运行状态 · 导出结果",
-        "en": "story tree · per-step regen · run status · export"
+        "zh": "故事树可视化 · 单步重生成 · 改动影响分析\n逐段评审改稿 · 原稿可还原 · 定稿产物锁定\n运行状态追踪 · 断点续跑 · 导出到项目目录",
+        "en": "story tree · per-step regen · change-impact analysis\nper-section review and edit · restore the original draft · lock approved artifacts\nrun status · resume from checkpoint · export into the project"
       }
     },
     {
@@ -40,12 +40,20 @@
         "en": "How to use"
       },
       "body": {
-        "zh": "面板管理启用 → 打开「narrative」面板或对话 /narrative",
-        "en": "Enable in Admin → open 'narrative' or type /narrative"
+        "zh": "作为 Codex 插件:装好后新开会话,直接说需求\n在 Studio 中:面板管理启用 →「narrative」面板或对话 /narrative\n两条路共用同一套服务,产物落在同一个项目目录",
+        "en": "As a Codex plugin: install, start a new session, just state what you need\nIn Studio: enable in panel admin, then open the 'narrative' panel or type /narrative\nBoth paths share one service and write to the same project directory"
       }
     }
   ],
   "history": [
+    {
+      "version": "0.2.0",
+      "date": "2026-09-24",
+      "notes": {
+        "zh": "可作为 Codex 插件独立安装:自带命令行与技能,不依赖游戏引擎版本;界面改用统一设计系统,跟随宿主的明暗外观",
+        "en": "Installable as a standalone Codex plugin: ships its own CLI and skill, independent of the game engine version; the UI moved onto the shared design system and follows the host light/dark appearance"
+      }
+    },
     {
       "version": "0.1.0",
       "date": "2026-05-22",

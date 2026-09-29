@@ -1,0 +1,40 @@
+{
+  "name": "narrative",
+  "version": "0.2.0",
+  "description": "AI-driven narrative content generation pipeline for game development",
+  "author": {
+    "name": "ForgeaX"
+  },
+  "homepage": "https://github.com/ForgeaX-Games/forgeax-ex-narrative",
+  "repository": "https://github.com/ForgeaX-Games/forgeax-ex-narrative",
+  "license": "UNLICENSED",
+  "keywords": [
+    "narrative",
+    "game design",
+    "worldbuilding",
+    "storytelling",
+    "forgeax"
+  ],
+  "skills": "./codex-skills/",
+  "interface": {
+    "displayName": "叙事工坊",
+    "shortDescription": "游戏叙事从一句话需求到可落地的世界观、角色与剧情",
+    "longDescription": "叙事工坊把一句话的故事需求展开成完整的游戏叙事资产：品类识别、世界观立柱、角色卡、剧情结构与分支、质量校验与定向重写，全部产出可直接进入 ForgeaX 引擎的工程文件。",
+    "developerName": "ForgeaX",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/ForgeaX-Games/forgeax-ex-narrative",
+    "defaultPrompt": [
+      "帮我做一个赛博朋克侦探游戏的世界观和主角",
+      "把这份设定文档扩写成完整的剧情结构",
+      "检查当前叙事里的设定冲突并修掉"
+    ],
+    "brandColor": "#50631F",
+    "composerIcon": "./assets/narrative-workshop.svg",
+    "logo": "./assets/narrative-workshop.svg"
+  }
+}

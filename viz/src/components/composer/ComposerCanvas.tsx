@@ -18,7 +18,6 @@ import { useNarrativeStore } from "../../store/narrativeStore";
 import { useRegisterCanvasControls } from "../../lib/canvasControls";
 import {
   COMPOSER_DND_MIME,
-  CATEGORY_COLOR,
   computeAnchoredPipelines,
   findCatalogItem,
   type ComposerCatalogItem,
@@ -85,7 +84,7 @@ export function ComposerCanvas({ selectedId, onSelect }: ComposerCanvasProps) {
         target: e.target,
         type: "smoothstep",
         animated: true,
-        style: { stroke: "rgba(77,255,160,0.5)" },
+        style: { stroke: "color-mix(in srgb, var(--color-status-success) 50%, transparent)" },
       })),
     [composerEdges],
   );
@@ -188,17 +187,14 @@ export function ComposerCanvas({ selectedId, onSelect }: ComposerCanvasProps) {
         fitView
         proOptions={{ hideAttribution: true }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={22} size={1.1} color="rgba(77,255,160,0.05)" />
+        <Background variant={BackgroundVariant.Dots} gap={22} size={1.1} color="color-mix(in srgb, var(--color-status-success) 5%, transparent)" />
         {/* 缩放/复原/重排全归底栏那条居中工具条；画布角上只留缩略图，空画布上连它也不摆。 */}
         {composerNodes.length > 0 && (
           <MiniMap
             position="top-right"
-            nodeColor={(n) => {
-              const node = composerNodes.find((c) => c.id === n.id);
-              return node ? CATEGORY_COLOR[node.category] : "rgba(77,255,160,0.2)";
-            }}
-            maskColor="rgba(4,8,2,0.8)"
-            style={{ background: "rgba(6,10,4,0.95)" }}
+            nodeColor="var(--color-border-strong)"
+            maskColor="color-mix(in srgb, var(--color-background-inset) 80%, transparent)"
+            style={{ background: "color-mix(in srgb, var(--color-background-inset) 95%, transparent)" }}
           />
         )}
       </ReactFlow>

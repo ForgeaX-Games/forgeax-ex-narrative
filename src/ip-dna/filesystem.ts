@@ -26,6 +26,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { resolveNarrativeRoot } from "../runtime/artifact-root.js";
 import type {
   NarrativeIpDna,
   HierarchyNode,
@@ -64,12 +65,14 @@ export function runName(timestamp: StoryTimestamp, title: string): string {
 }
 
 export interface LayoutRoots {
-  /** 进程根（默认 process.cwd()）。 */
+  /** 进程根（默认双模式解析：独立模式 = process.cwd()，插件模式 = 平台项目
+   *  目录下的叙事命名空间；见 src/runtime/artifact-root.ts）。显式传入时按
+   *  传入值为准（测试用临时目录走这条）。 */
   cwd?: string;
 }
 
 function resolveCwd(roots?: LayoutRoots): string {
-  return roots?.cwd ?? process.cwd();
+  return roots?.cwd ?? resolveNarrativeRoot();
 }
 
 // ─────────────────────────────────────────────────────────────────

@@ -1,13 +1,16 @@
+import { useEffect, useState } from "react";
 import { ChevronLeft, Plus, Upload } from "lucide-react";
 import { TaskFiles } from "./TaskFiles";
 import { useNarrativeStore } from "../../store/narrativeStore";
 import { useNarrativeRuntime } from "../runtime/NarrativeRuntimeProvider";
 import { formatHistoryTime, STEP_LABEL_MAP } from "../../lib/routingCatalog";
 import { useGenreName } from "../../lib/genreCache";
+import { axisLabelByName, loadNarrativeAxes } from "../../lib/axesCache";
+import type { NarrativeAxesCatalog } from "../../hooks/useNarrativeStream";
 import { localizeTagSummary } from "../../i18n/tagSummary";
-import { RUN_STATE_LABEL } from "../../store/runState";
 import { useT, tStepLabel } from "../../i18n";
 import { switchActivePipeline } from "../../lib/pipelineSwitch";
+import { describeEntryStatus } from "../../lib/entryStatusLabel";
 
 /**
  * 任务管理：每次通过对话开启的一次生成，就是一个任务。
@@ -24,6 +27,9 @@ export function TaskPanel() {
   const t = useT();
   const wb = useNarrativeRuntime();
   const genreName = useGenreName();
+  // 三轴词表用来把落盘的中文轴名翻成当前语言；进程内缓存，全应用只请求一次。
+  const [axes, setAxes] = useState<NarrativeAxesCatalog | null>(null);
+  useEffect(() => { void loadNarrativeAxes().then(setAxes); }, []);
   const openedTaskKey = useNarrativeStore((s) => s.openedTaskKey);
   const activeEntryKey = useNarrativeStore((s) => s.activeEntryKey);
   const activeSteps = useNarrativeStore((s) => s.activeSteps);
@@ -43,7 +49,8 @@ export function TaskPanel() {
   // 新建任务 = 松开当前条目 + 清草稿，回到谁都没选中的空态。
   // 这里不建条目——条目要等这一跑真开工（对话栏点发送 / 底栏点开始）才落库，
   // 否则用户随手点两下就攒出一串空壳任务。
-  // 位置在列表最上：新建是这一栏最常用的动作，翻到十三条历史的底下才找到它没道理。
+  // 位置在列表最上且钉住滚动区顶部：新建是这一栏最常用的动作，
+  // 翻到十三条历史的底下才找到它没道理。
   const newTaskCard = (
     <button
       type="button"
@@ -78,13 +85,7 @@ export function TaskPanel() {
         {opts.running && !entry.startedAt ? t("tms.history.current") : formatHistoryTime(entry)}
       </span>
       <span className={`hi-badge hi-badge--${paused ? "paused" : entry.status ?? "unknown"}`}>
-        {entry.status === "completed" ? t("tms.history.completed")
-          : entry.status === "running" ? t("tms.history.running")
-          : paused ? t(RUN_STATE_LABEL.paused)
-          : entry.status === "interrupted" ? t("tms.history.interrupted")
-          : entry.status === "failed" ? t("tms.history.failed")
-          : entry.status === "config" ? t("tms.history.config")
-          : entry.status ?? "?"}
+        {describeEntryStatus(entry, t) || "?"}
       </span>
       {opts.toggle}
       {opts.back && (
@@ -131,10 +132,15 @@ export function TaskPanel() {
     }
     const genre = genreName(entry.genreCode);
     if (genre) parts.push(t("nav.suffix.expert", { name: genre }));
-    if (entry.mode && entry.mode !== "narrative_auto") parts.push(entry.mode);
-    if (entry.storyType) parts.push(entry.storyType);
-    if (entry.storyTheme) parts.push(entry.storyTheme);
-    if (entry.narrativeStructure) parts.push(entry.narrativeStructure);
+    // 这四项落盘存的都是后端的索引值（模式 id、三轴的中文名），不是给人看的文案；
+    // 直接贴上去英文界面就会冒出中文。译文存在就取译文，没有才照原样显示。
+    if (entry.mode && entry.mode !== "narrative_auto") {
+      const modeLabel = t(`route.${entry.mode}.label`);
+      parts.push(modeLabel === `route.${entry.mode}.label` ? entry.mode : modeLabel);
+    }
+    if (entry.storyType) parts.push(axisLabelByName(axes, entry.storyType));
+    if (entry.storyTheme) parts.push(axisLabelByName(axes, entry.storyTheme));
+    if (entry.narrativeStructure) parts.push(axisLabelByName(axes, entry.narrativeStructure));
     if (entry.complexity != null) parts.push(t("nav.scale.level", { n: entry.complexity }));
     return (
       <div className="hi-meta">
@@ -292,7 +298,6 @@ export function TaskPanel() {
                 </div>
               );
             })}
-            {newTaskCard}
           </div>
         )}
       </div>

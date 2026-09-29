@@ -180,9 +180,13 @@ const STEP2_OUTPUT = `**输出要求**：
 
 export const STORY_FRAMEWORK_PLAN_COMPOSER: PromptComposer = {
   stepId: "story_framework",
-  skillSlots: ["style_guide", "examples", "constraints"],
+  // 品类风格/约束不再单开 style_guide/examples/constraints 块——genreStyleProvider
+  // 已注册进 DEFAULT_PROVIDERS，同一份 skill.slots 内容随 strategy 段的
+  // strategy_genre 子槽一起送出，不必（也不该）在这里再用 {{SKILL.*}} 占位符重复
+  // 注入一遍。
+  skillSlots: [],
   systemBlockOrder: [
-    "base", "strategy", "ip_dna", "style_guide", "examples", "constraints",
+    "base", "strategy", "ip_dna",
     "cot", "priority_chain", "mode_source", "concept_mapping", "self_check", "output",
   ],
   userBlockOrder: ["plan_prompt", "user_instructions"],
@@ -240,18 +244,15 @@ export const STORY_FRAMEWORK_PLAN_COMPOSER: PromptComposer = {
     base: STEP1_SYSTEM,
     strategy: STRATEGY_SLOT_BLOCK,
     ip_dna: IP_DNA_SLOT_BLOCK,
-    style_guide: "{{SKILL.style_guide}}",
-    examples: "{{SKILL.examples}}",
-    constraints: "{{SKILL.constraints}}",
     output: STEP1_OUTPUT,
   },
 };
 
 export const STORY_FRAMEWORK_FILL_COMPOSER: PromptComposer = {
   stepId: "story_framework",
-  skillSlots: ["style_guide", "examples", "constraints"],
+  skillSlots: [],
   systemBlockOrder: [
-    "base", "strategy", "ip_dna", "style_guide", "examples", "constraints",
+    "base", "strategy", "ip_dna",
     "priority_chain", "mode_source", "concept_mapping", "self_check", "output",
   ],
   userBlockOrder: ["fill_prompt"],
@@ -259,9 +260,6 @@ export const STORY_FRAMEWORK_FILL_COMPOSER: PromptComposer = {
     base: STEP2_SYSTEM,
     strategy: STRATEGY_SLOT_BLOCK,
     ip_dna: IP_DNA_SLOT_BLOCK,
-    style_guide: "{{SKILL.style_guide}}",
-    examples: "{{SKILL.examples}}",
-    constraints: "{{SKILL.constraints}}",
     // F3：同 PLAN composer 的四项结构性缺口，材料换成了 fill 阶段实际吃到的那一批。
     priority_chain: inputPriorityChain([
       "用户原始需求里字面点名的具体要求",

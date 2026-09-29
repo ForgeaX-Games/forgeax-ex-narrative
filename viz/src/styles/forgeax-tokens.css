@@ -1,82 +1,29 @@
 /* =============================================================================
-   ForgeaX Design Tokens — vendored subset
-   Source: packages/interface/src/styles/primitive.css + tokens.css
-   Purpose: Align narrative iframe styles with the host Studio theme.
+   ForgeaX Design Tokens — 语义层（本仓自有）
+
+   分工：
+     fx-tokens.css      设计规范的产物，逐字引入不改，可直接与上游 diff。
+                        提供 --fx-ref-*（原始值）与 --fx-*（语义值，按主题切换）。
+     本文件             把叙事工坊既有的 --color-* / --prim-* 词汇接到 --fx-* 上。
+                        它存在的唯一理由是不必改动 1100 多处组件 CSS。
+     index.css          --dt-*（Detroit 配色遗产）→ 本文件的 --color-*。
+
+   --prim-* 现在只剩不涉及颜色的东西：圆角、字体、间距。这些不随主题变，没必要
+   绕一圈。颜色一律来自 --fx-*，本文件不再自己配任何色值。
    ============================================================================= */
+@import './fx-tokens.css';
+
 :root {
 
-  /* ── primitive / neutral ──────────────────────────────────────────────── */
-  --prim-color-neutral-0:    #FFFFFF;
-  --prim-color-neutral-50:   #F2F2F2;
-  --prim-color-neutral-100:  #E6E6E6;
-  --prim-color-neutral-200:  #CCCCCC;
-  --prim-color-neutral-300:  #B3B3B3;
-  --prim-color-neutral-400:  #999999;
-  --prim-color-neutral-500:  #808080;
-  --prim-color-neutral-550:  #737373;
-  --prim-color-neutral-600:  #666666;
-  --prim-color-neutral-700:  #4D4D4D;
-  --prim-color-neutral-750:  #404040;
-  --prim-color-neutral-800:  #333333;
-  --prim-color-neutral-850:  #242424;
-  --prim-color-neutral-900:  #191919;
-  --prim-color-neutral-950:  #0D0D0D;
-  --prim-color-neutral-1000: #000000;
+  /* 这里曾经是一套自己配的原始色盘：16 档纯灰、3 档黄、以及 lime / orange /
+     blue / green / red。全部已删。它们共有一个改不动的毛病——一个色只有一个值，
+     两套主题拿到的是同一个颜色，所以在浅色下普遍对不住底：#EEC33A 压在白底上
+     只有约 1.7:1，#C7C7C8 约 1.5:1，都远低于可读线。规范的 `--fx-color-status-*`
+     按主题各给一组（浅色取深的 700/800 档，深色取浅的 300 档），这正是它存在的
+     理由，所以状态与强调一律走它，灰阶一律走 `--fx-ref-color-neutral-*`。 */
 
-  /* ── primitive / lime (brand) ─────────────────────────────────────────── */
-  --prim-color-lime-50:  #FCFFF0;
-  --prim-color-lime-100: #F6FFD8;
-  --prim-color-lime-200: #EBFFA8;
-  --prim-color-lime-300: #DFFF78;
-  --prim-color-lime-400: #D4FF48;
-  --prim-color-lime-500: #B1D43C;
-  --prim-color-lime-600: #8DAA30;
-  --prim-color-lime-700: #6A7F24;
-  --prim-color-lime-800: #465418;
-  --prim-color-lime-900: #232A0C;
-  --prim-color-lime-950: #111406;
-
-  /* ── primitive / orange ───────────────────────────────────────────────── */
-  --prim-color-orange-300: #FFC481;
-  --prim-color-orange-400: #FFB056;
-  --prim-color-orange-500: #FF9C2A;
-  --prim-color-orange-600: #CB7C21;
-  --prim-color-orange-700: #975C19;
-  --prim-color-orange-800: #633C10;
-
-  /* ── primitive / blue ─────────────────────────────────────────────────── */
-  --prim-color-blue-300: #8BB5FA;
-  --prim-color-blue-400: #639CF8;
-  --prim-color-blue-500: #3B82F6;
-  --prim-color-blue-700: #234D91;
-  --prim-color-blue-900: #0B182D;
-
-  /* ── primitive / green ────────────────────────────────────────────────── */
-  --prim-color-green-400: #4FD17F;
-  --prim-color-green-500: #22C55E;
-  --prim-color-green-600: #1B9D4B;
-  --prim-color-green-800: #0D4C24;
-
-  /* ── primitive / red ──────────────────────────────────────────────────── */
-  --prim-color-red-400: #F26A6A;
-  --prim-color-red-500: #EF4444;
-  --prim-color-red-600: #BE3636;
-  --prim-color-red-800: #5C1A1A;
-
-  /* ── primitive / yellow ───────────────────────────────────────────────── */
-  --prim-color-yellow-400: #EEC33A;
-  --prim-color-yellow-500: #EAB308;
-  --prim-color-yellow-600: #BA8E06;
-
-  /* ── primitive / purple ───────────────────────────────────────────────── */
-  --prim-color-purple-300: #CC9BFA;
-  --prim-color-purple-400: #BA78F9;
-  --prim-color-purple-500: #A855F7;
-  --prim-color-purple-800: #412160;
-
-  /* ── primitive / teal ─────────────────────────────────────────────────── */
-  --prim-color-teal-300: #63EACF;
-  --prim-color-teal-400: #48FFCF;
+  /* 紫色也一起走了。它是全仓唯一一个规范没有对应物的色相，凑的是「六个角色要六个
+     颜色」的第六位；角色色撤掉之后没有调用点，四档原始值随之作废。 */
 
   /* ── primitive / typography ───────────────────────────────────────────── */
   --prim-font-sans: "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
@@ -93,6 +40,19 @@
   --prim-radius-24:  24px;
   --prim-radius-full: 9999px;
 
+  /* ── 字号 ──────────────────────────────────────────────────────────────
+     原来散落 14 档（7 / 7.5 / 8 / 9 / 10 / 11 / 12 …），其中 88% 落在 12px 以下。
+     规范的下界就是 12px，并且明确写了「不要靠缩小字号塞窄屏，改布局」，所以这里
+     不另设更小的档：读不清的密度不是密度，是缺陷。
+     只取字号，字重和行高仍由各处自己决定——那两项现状并不混乱。 */
+  --text-caption: var(--fx-type-caption-font-size);  /* 12 · 元数据、角标 */
+  --text-compact: var(--fx-type-compact-font-size);  /* 13 · 紧凑正文、代码 */
+  --text-ui:      var(--fx-type-ui-font-size);       /* 14 · 控件与标签 */
+  --text-body:    var(--fx-type-body-font-size);     /* 15 · 正文 */
+  --text-heading: var(--fx-type-heading-font-size);  /* 16 · 区块标题 */
+  --text-title:   var(--fx-type-title-font-size);    /* 20 · 页面标题 */
+  --text-display: var(--fx-ref-font-size-24);        /* 24 · 唯一的特大号 */
+
   /* ── primitive / space ────────────────────────────────────────────────── */
   --prim-space-2:   2px;
   --prim-space-4:   4px;
@@ -101,64 +61,102 @@
   --prim-space-12: 12px;
   --prim-space-16: 16px;
 
-  /* ═══ SEMANTIC LAYER ══════════════════════════════════════════════════ */
+  /* ═══ SEMANTIC LAYER ══════════════════════════════════════════════════
+     每一条都派生自 `fx-tokens.css` 的 `--fx-*`，不再自己写死颜色。这一层是主题的
+     咽喉：37 条定义覆盖了全部 1143 处使用，所以换主题只改这里，组件 CSS 一行不动。
+
+     白字压在近黑底上是原来写死的，那正是它没法出浅色的原因。`--fx-*` 同一组语义名
+     在 light / dark 下取不同值，颜色该是什么由主题说了算，这里只声明"这是什么角色"。 */
 
   /* ── text ─────────────────────────────────────────────────────────────── */
-  --color-text-primary:             var(--prim-color-neutral-0);
-  --color-text-secondary:           rgba(255, 255, 255, 0.60);
-  --color-text-tertiary:            rgba(255, 255, 255, 0.30);
-  --color-text-disabled:            rgba(255, 255, 255, 0.20);
-  --color-text-on-bright-primary:   var(--prim-color-neutral-1000);
-  --color-text-on-bright-secondary: rgba(0, 0, 0, 0.60);
+  --color-text-primary:             var(--fx-color-text-primary);
+  --color-text-secondary:           var(--fx-color-text-secondary);
+  --color-text-tertiary:            var(--fx-color-text-muted);
+  --color-text-disabled:            var(--fx-color-text-disabled);
+  /* 压在实心强调块上的字。强调块现在是中性色，浅色下深、深色下浅，所以这里要
+     跟着反过来——恒为深色是品牌绿时代的遗留，那时两套主题里块都是亮的。 */
+  --color-text-on-bright-primary:   var(--fx-color-text-inverse);
+  --color-text-on-bright-secondary: color-mix(in srgb, var(--fx-color-text-inverse) 60%, transparent);
 
   /* ── background ───────────────────────────────────────────────────────── */
-  --color-background-canvas:   var(--prim-color-neutral-950);
-  --color-background-base:     var(--prim-color-neutral-900);
-  --color-background-elevated: var(--prim-color-neutral-850);
-  --color-background-floating: var(--prim-color-neutral-800);
+  --color-background-canvas:   var(--fx-color-surface-canvas);
+  --color-background-base:     var(--fx-color-surface-sidebar);
+  --color-background-elevated: var(--fx-color-surface-raised);
+  /* 内凹面：输入框、代码块、下拉这类"陷进去"的表面。原先靠半透明黑压暗父层，
+     浅色下那会变成脏灰；内凹在两套主题里是各自独立的一档颜色，不是"加点黑"。 */
+  --color-background-inset:    var(--fx-color-surface-inset);
+  /* floating 与 elevated 同色是规范要求的：停靠面板平直接缝，浮层靠阴影分层而不是
+     再深一档底色。原来靠色阶区分，浅色下会变成一片灰糊。 */
+  --color-background-floating: var(--fx-color-surface-raised);
 
   /* ── border ───────────────────────────────────────────────────────────── */
-  --color-border-subtle:  var(--prim-color-neutral-800);
-  --color-border-default: var(--prim-color-neutral-750);
-  --color-border-strong:  var(--prim-color-neutral-550);
+  --color-border-subtle:  var(--fx-color-border-subtle);
+  --color-border-default: var(--fx-color-border-default);
+  --color-border-strong:  var(--fx-color-border-strong);
 
-  /* ── brand ────────────────────────────────────────────────────────────── */
-  --color-brand-primary:       var(--prim-color-lime-400);
-  --color-brand-primary-light: var(--prim-color-lime-300);
-  --color-brand-primary-soft:  var(--prim-color-lime-700);
-  --color-brand-primary-hover: var(--prim-color-lime-300);
+  /* ── 强调与激活 ───────────────────────────────────────────────────────
+     品牌绿不进界面。设计规范定义了 brand token，但它自己的界面一次都没用过：
+     激活、当前、悬停一律靠明暗表达（secondary → primary），颜色只留给状态
+     （成功/警告/错误）和单选指示器。满屏亮绿会让"哪个是要点的"失效，也让真正
+     的状态色失去分量。绿色只保留在标志上，那里不归 CSS 管。
+
+     名字仍叫 brand-*，因为这三百来处组件 CSS 引用的是这个词；换掉的是它指向
+     什么，不是它叫什么。 */
+  --color-brand-primary:       var(--fx-color-selection-indicator);
+  --color-brand-primary-light: var(--fx-color-border-strong);
+  --color-brand-primary-soft:  var(--fx-color-surface-selected);
+  --color-brand-primary-hover: var(--fx-color-text-primary);
+  --color-brand-text:          var(--fx-color-text-primary);
   /* Shorthand used by runtime-sidebar / center-workspace */
   --primary: var(--color-brand-primary);
 
-  /* ── accent ───────────────────────────────────────────────────────────── */
-  --color-accent-blue-default:   var(--prim-color-blue-400);
-  --color-accent-blue-soft:      var(--prim-color-blue-900);
-  --color-accent-green-default:  var(--prim-color-green-400);
-  --color-accent-green-soft:     var(--prim-color-green-800);
-  --color-accent-orange-default: var(--prim-color-orange-400);
-  --color-accent-orange-soft:    var(--prim-color-orange-800);
-  --color-accent-purple-default: var(--prim-color-purple-500);
-  --color-accent-purple-soft:    var(--prim-color-purple-800);
-  --color-accent-error-default:  var(--prim-color-red-400);
-  --color-accent-error-soft:     var(--prim-color-red-800);
+  /* ── 操作（按钮） ──────────────────────────────────────────────────────
+     主按钮是中性色：浅色下近黑、深色下近白。品牌绿不做主按钮也不做成功色，
+     它只用于标志和少量强调——满屏亮绿按钮会让"哪个是要点的"这件事失效。 */
+  --color-action-primary-bg:      var(--fx-color-action-primary-bg);
+  --color-action-primary-fg:      var(--fx-color-action-primary-fg);
+  --color-action-primary-hover:   var(--fx-color-action-primary-hover);
+  --color-action-primary-pressed: var(--fx-color-action-primary-pressed);
+  --color-action-secondary-bg:    var(--fx-color-action-secondary-bg);
+  --color-action-secondary-fg:    var(--fx-color-action-secondary-fg);
+  --color-action-secondary-hover: var(--fx-color-action-secondary-hover);
+  --color-action-disabled-bg:     var(--fx-color-action-disabled-bg);
+  --color-action-disabled-fg:     var(--fx-color-action-disabled-fg);
+  --color-action-danger-bg:       var(--fx-color-action-danger-bg);
+  --color-action-danger-fg:       var(--fx-color-action-danger-fg);
+  --radius-button:                var(--fx-component-button-radius);
 
-  /* ── status ───────────────────────────────────────────────────────────── */
-  --color-status-success: var(--prim-color-green-600);
-  --color-status-warning: var(--prim-color-yellow-600);
-  --color-status-error:   var(--prim-color-red-600);
+  /* ── 状态 ──────────────────────────────────────────────────────────────
+     这里原本并排放着两组同值的 token：一组叫 accent-blue / accent-green /
+     accent-orange / accent-error，一组叫 status-success / warning / error。
+     前一组按色相取名，读者得先知道「橙 = 警告」才看得懂调用点，而且四个 -soft
+     变体一个调用点都没有。合成一组，按它表达的事取名。 */
+  --color-status-info:    var(--fx-color-status-info-fg);
+  --color-status-success: var(--fx-color-status-success-fg);
+  --color-status-warning: var(--fx-color-status-warning-fg);
+  --color-status-error:   var(--fx-color-status-error-fg);
 
   /* ── divider ──────────────────────────────────────────────────────────── */
-  --color-divider-strong:  rgba(255, 255, 255, 0.15);
-  --color-divider-default: rgba(255, 255, 255, 0.10);
-  --color-divider-subtle:  rgba(255, 255, 255, 0.05);
+  --color-divider-strong:  var(--fx-color-border-strong);
+  --color-divider-default: var(--fx-color-border-default);
+  --color-divider-subtle:  var(--fx-color-border-subtle);
 
   /* ── interaction ──────────────────────────────────────────────────────── */
-  --color-interaction-hover:            rgba(255, 255, 255, 0.05);
-  --color-interaction-selected-brand:   rgba(212, 255, 72, 0.10);
-  --color-interaction-selected-neutral: rgba(255, 255, 255, 0.10);
+  --color-interaction-hover:            var(--fx-color-surface-hover);
+  --color-interaction-selected-brand:   var(--fx-color-surface-selected);
+  --color-interaction-selected-neutral: var(--fx-color-surface-selected);
 
   /* ── overlay ──────────────────────────────────────────────────────────── */
-  --color-overlay-modal: rgba(0, 0, 0, 0.50);
+  --color-overlay-modal: var(--fx-color-scrim);
+  /* 压在图片上的字幕底。遮罩盖的是媒体不是表面，两套主题里都得是黑的，
+     只是浅色界面里可以轻一些。 */
+  --color-overlay-media: rgba(0, 0, 0, 0.45);
+
+  /* ── shadow ───────────────────────────────────────────────────────────── */
+  /* 投影浓度必须按主题分别给：同一个 30% 黑在浅色界面上是一团脏灰。
+     这两档是设计规范自己的判断，推导不出来，所以显式写。 */
+  --color-shadow-soft:   rgba(0, 0, 0, 0.30);
+  --color-shadow-strong: rgba(0, 0, 0, 0.50);
 
   /* ── motion ───────────────────────────────────────────────────────────── */
   --motion-duration-instant: 120ms;
@@ -177,4 +175,12 @@
   --pane-head-h:  51px;
   --pane-band2-h: 44px;
   --pane-band3-h: 26px;
+}
+
+/* 上面那些值都跟着 --fx-* 自动翻主题，只有下面三条例外：投影浓度和媒体遮罩的
+   深浅是各主题独立的设计判断，从深色那套推不出浅色那套。 */
+[data-theme="light"] {
+  --color-overlay-media: rgba(0, 0, 0, 0.35);
+  --color-shadow-soft:   rgba(0, 0, 0, 0.08);
+  --color-shadow-strong: rgba(0, 0, 0, 0.14);
 }

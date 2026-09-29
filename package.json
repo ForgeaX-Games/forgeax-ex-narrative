@@ -9,6 +9,9 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "forgeax-narrative": "dist/bin/narrative.js"
+  },
   "private": false,
   "publishConfig": {
     "access": "public"
@@ -28,6 +31,8 @@
     "build:backend": "node scripts/clean-dist.mjs && tsx scripts/gen-seats.ts && tsc && tsx scripts/copy-runtime-assets.ts",
     "build:viz": "npm --prefix viz ci && npm --prefix viz run build",
     "gen:seats": "tsx scripts/gen-seats.ts",
+    "gen:catalog": "node scripts/gen-tool-catalog.mjs",
+    "build:extension": "bun scripts/build-extension.mjs",
     "build:skills": "tsx scripts/build-skills.ts",
     "dev": "tsx --env-file=.env src/cli.ts",
     "start": "node --env-file-if-exists=.env dist/api/server.js",

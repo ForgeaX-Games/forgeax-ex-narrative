@@ -21,14 +21,20 @@ export interface LLMClientConfig {
   proxyUrl?: string;
   /** Bearer token for LiteLLM proxy (`LITELLM_PROXY_KEY`). */
   proxyApiKey?: string;
+  /**
+   * 借用宿主 agent 的模型。最后一条路：用户一把 key 都没配时用它，
+   * 代价与能力差见 host-agent.ts 的 HOST_AGENT_LIMITS。
+   */
+  hostAgent?: HostAgentSpec;
   defaultModel?: string;
   /** UI locale — when "en", all LLM outputs are instructed to use English. */
   contentLocale?: ContentLocale;
 }
 
-import { getDefaultModel } from "../../utils/plugin-env.js";
+import { getDefaultModel, getHostAgentCommand } from "../../utils/plugin-env.js";
 import type { ContentLocale } from "../../types/index.js";
 import { finalizeSystemPrompt, finalizeUserPrompt } from "./content-locale.js";
+import { runHostAgent, type HostAgentSpec } from "./host-agent.js";
 const DEFAULT_MODEL = getDefaultModel();
 const DEFAULT_TIMEOUT = 300_000;
 /**
@@ -118,6 +124,7 @@ export class LLMClient {
   private client: GoogleGenAI | null;
   private proxyUrl: string | null;
   private proxyApiKey: string | null;
+  private hostAgent: HostAgentSpec | null;
   private defaultModel: string;
   private contentLocale: ContentLocale;
 
@@ -127,6 +134,7 @@ export class LLMClient {
     this.contentLocale = config.contentLocale ?? "zh";
     this.proxyUrl = config.proxyUrl?.replace(/\/+$/, "") ?? null;
     this.proxyApiKey = config.proxyApiKey?.trim() || null;
+    this.hostAgent = null;
 
     if (this.proxyUrl) {
       this.client = null;
@@ -138,8 +146,39 @@ export class LLMClient {
     } else if (config.apiKey) {
       this.client = new GoogleGenAI({ apiKey: config.apiKey });
     } else {
-      throw new Error("LLMClient requires either proxyUrl+proxyApiKey or apiKey");
+      // 排在最后，且在这里兜底而不是在八个构造点各写一遍：「两把 key 都没有就借
+      // 宿主的模型」是一句关于本类的话，八处各表述一次只会各自漂移。
+      const command = config.hostAgent?.command || getHostAgentCommand();
+      if (!command) {
+        throw new Error("LLMClient requires apiKey, proxyUrl+proxyApiKey, or a host agent");
+      }
+      this.client = null;
+      this.hostAgent = { command };
     }
+  }
+
+  /**
+   * 这条通道是不是在借宿主的模型。
+   *
+   * 供 doctor 与产物元数据交代："这份内容是宿主模型生成的，不是叙事自带 key
+   * 生成的"——两者的质量和成本不一样，混在一起看会得出错的结论。
+   */
+  get usesHostAgent(): boolean {
+    return this.hostAgent !== null;
+  }
+
+  private async _callViaHostAgent(
+    systemPrompt: string,
+    userPrompt: string,
+    options: LLMCallOptions,
+    images?: readonly ImagePart[],
+  ): Promise<string> {
+    return runHostAgent(this.hostAgent!, systemPrompt, userPrompt, {
+      model: options.model,
+      timeoutMs: options.timeout ?? DEFAULT_TIMEOUT,
+      json: options.responseFormat === "json",
+      images,
+    });
   }
 
   private resolveLocale(options: LLMCallOptions): ContentLocale {
@@ -164,6 +203,9 @@ export class LLMClient {
   ): Promise<string> {
     const locale = this.resolveLocale(options);
     const [sp, up] = this.preparePrompts(systemPrompt, userPrompt, locale);
+    if (this.hostAgent) {
+      return this._callViaHostAgent(sp, up, options);
+    }
     if (this.proxyUrl) {
       return this._callViaProxy(sp, up, options);
     }
@@ -211,6 +253,13 @@ export class LLMClient {
   }
 
   /**
+   * 借宿主模型时的失败原话，跟代理那条路用同一个句式，方便调用方统一交代。
+   * 宿主虽然自己会上网，但它不回 groundingChunks，拿不到来源就不能声称检索过。
+   */
+  private static readonly HOST_AGENT_NO_SEARCH =
+    "callWithWebSearch requires the direct Gemini path (host agent returns no citable sources)";
+
+  /**
    * 联网检索式调用（Gemini googleSearch grounding）。
    *
    * 返回正文与来源清单两样。来源为空**不是**错误，而是"模型这次没真去检索"的信号，
@@ -225,7 +274,11 @@ export class LLMClient {
     options: LLMCallOptions = {},
   ): Promise<WebSearchResult> {
     if (!this.supportsWebSearch) {
-      throw new Error("callWithWebSearch requires the direct Gemini path (proxy mode has no search tool)");
+      throw new Error(
+        this.hostAgent
+          ? LLMClient.HOST_AGENT_NO_SEARCH
+          : "callWithWebSearch requires the direct Gemini path (proxy mode has no search tool)",
+      );
     }
     const locale = this.resolveLocale(options);
     const [sp, up] = this.preparePrompts(systemPrompt, userPrompt, locale);
@@ -259,6 +312,9 @@ export class LLMClient {
   ): Promise<string> {
     const locale = this.resolveLocale(options);
     const [sp, up] = this.preparePrompts(systemPrompt, userPrompt, locale);
+    if (this.hostAgent) {
+      return this._callViaHostAgent(sp, up, options, images);
+    }
     const toBase64 = (d: string | Buffer): string =>
       typeof d === "string" ? d : d.toString("base64");
     const parts: Array<Record<string, unknown>> = [
@@ -380,10 +436,27 @@ export class LLMClient {
   ): AsyncGenerator<string> {
     const locale = this.resolveLocale(options);
     const [sp, up] = this.preparePrompts(systemPrompt, userPrompt, locale);
-    if (this.proxyUrl) {
+    if (this.hostAgent) {
+      yield* LLMClient._simulateStream(await this._callViaHostAgent(sp, up, options));
+    } else if (this.proxyUrl) {
       yield* this._streamViaProxy(sp, up, options);
     } else {
       yield* this._streamViaSdk(sp, up, options);
+    }
+  }
+
+  /**
+   * 把一次整段返回切成小块吐出来，给打字机效果用。
+   *
+   * 代理和宿主 agent 都只有非流式接口，但上层是按流写的；与其在上层分叉，
+   * 不如在这里把"整段"装成"流"。真正的流式只有 SDK 直连那条路有。
+   */
+  private static async *_simulateStream(result: string): AsyncGenerator<string> {
+    if (!result) return;
+    const CHUNK = 80;
+    for (let i = 0; i < result.length; i += CHUNK) {
+      yield result.slice(i, i + CHUNK);
+      if (i + CHUNK < result.length) await new Promise((r) => setTimeout(r, 12));
     }
   }
 
@@ -416,17 +489,7 @@ export class LLMClient {
     options: LLMCallOptions,
   ): AsyncGenerator<string> {
     // Proxy only exposes generateContent (non-streaming).
-    // Simulate streaming by yielding in small chunks for typewriter UX.
-    const result = await this._callViaProxy(systemPrompt, userPrompt, options);
-    if (!result) return;
-
-    const CHUNK = 80;
-    for (let i = 0; i < result.length; i += CHUNK) {
-      yield result.slice(i, i + CHUNK);
-      if (i + CHUNK < result.length) {
-        await new Promise((r) => setTimeout(r, 12));
-      }
-    }
+    yield* LLMClient._simulateStream(await this._callViaProxy(systemPrompt, userPrompt, options));
   }
 
   async callStreamFull(

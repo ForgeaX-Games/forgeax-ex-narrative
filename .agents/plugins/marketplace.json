@@ -1,0 +1,9 @@
+{
+  "name": "forgeax",
+  "plugins": [
+    {
+      "name": "narrative",
+      "source": "./extension"
+    }
+  ]
+}

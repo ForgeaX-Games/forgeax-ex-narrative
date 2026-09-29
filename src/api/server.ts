@@ -1,6 +1,9 @@
 import express, { type Express } from "express";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import tools from "../tools/handlers.js";
+import { installIdleShutdown } from "./idle-shutdown.js";
 import { NarrativePipeline, isExecutableStep } from "../pipeline/core/pipeline.js";
 import type { RerunOptions } from "../pipeline/core/pipeline.js";
 import { getModesForTier, TIER_DEFAULT_MODE, STEP_OUTPUT_FIELDS, getModeConfig } from "../pipeline/routing/modes.js";
@@ -50,6 +53,7 @@ import { getAgentDef } from "../pipeline/blueprint/agent-def-registry.js";
 import { listSeatDiscovery, resolveSeatRunnableAgentId } from "../pipeline/core/seat-agents.js";
 import { STEP_IDS as S } from "../pipeline/routing/modes.js";
 import { LLMClient } from "../pipeline/runtime/llm-client.js";
+import { probeHostAgent } from "../pipeline/runtime/host-agent.js";
 import { buildKnowledgePromptSection, buildNodeTreeSummary, preClassifyChange, PIPELINE_KNOWLEDGE } from "../pipeline/runtime/pipeline-knowledge.js";
 import type { NarrativeContext, PipelineProgress, TierId, ModeId, PlotsGenerated, JrpgScript, SceneMap, QuestGraph, StepMeta, StepModification, StoryFramework, OutlinesGenerated, DetailedOutlinesGenerated, UploadedScript, NarrativeAxesSelection, AnnounceStepGroup } from "../types/index.js";
 import {
@@ -59,13 +63,14 @@ import {
   STORY_STRUCTURES,
 } from "../knowledge/narrative-axes/index.js";
 import { detectScriptFormat, describeScriptFormat } from "../utils/script-format-detector.js";
+import { packageVersion } from "../utils/package-version.js";
 import { runIpDnaPipeline, runIngest, runExtractAndGenerate, loadExtractSourceByRun, resolveIpDnaRuntimeAdapters, loadHierarchyIndexByRun, loadManifestByRun, listInputRunKeys, runArtifactRoots, RUN_ARTIFACT_GROUP_LABELS, analyzeRewriteImpact, createJob, updateJob, getJob, listJobs, cancelJob, formatTimestamp as formatIpDnaTimestamp, buildAdaptationDirective, planDecomposition, applyDecompositionClosure, assessVolume, collectLeafIds, saveHierarchyIndexOnly, saveAdaptationConfirmation, loadAdaptationConfirmation, guessLevelsFromHierarchy, type IncomingFile, type IpDnaProgress, type ExtractSource, type NarrativeIpDna } from "../ip-dna/index.js";
 // Phase C6: env reads are funnelled through plugin-env so the literal
 // `process.env.*_API_KEY` substring stays out of plugin source files. See
 // utils/plugin-env.ts header for the full rationale (this Express server is
 // a standalone-process bootstrap, scope-excluded from the ctx.env migration;
 // ToolRegistry handlers must use ctx.env per the character precedent).
-import { getGeminiApiKey, getLlmProxyUrl, getLlmProxyKey, getDefaultModel, readPluginEnv } from "../utils/plugin-env.js";
+import { getGeminiApiKey, getLlmProxyUrl, getLlmProxyKey, getDefaultModel, getHostAgentCommand, readPluginEnv } from "../utils/plugin-env.js";
 import { isSafeKey as isSafeEntryKeyFn, isSafeSourceDir, loadEntry as loadEntryFromDir, writeEntry as writeEntryToDir, applyPipelineLocations, normalizeAssets, confirmAsset, unconfirmAsset, type EntryConfig, type PipelineLocation } from "./entry-store.js";
 // 编辑原文：账本归并规则是纯函数，磁盘那一半留在本文件。
 import {
@@ -120,9 +125,11 @@ import {
   type TeamKind,
   type TeamRecord,
 } from "../custom-team/index.js";
+import { outputDir, narrativeArtifactContextMiddleware, resolveNarrativeRoot, toGameRelativePath } from "../runtime/artifact-root.js";
 
-const OUTPUT_DIR = path.resolve(process.cwd(), "output");
-fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+// 产物根：双模式路径映射（M-A，src/runtime/artifact-root.ts）。独立模式下
+// `outputDir()` 逐字节等于迁移前的 `OUTPUT_DIR = path.resolve(process.cwd(), "output")`；
+// 插件模式下按请求解析出的 slug 映射到平台项目目录。调用即确保目录存在。
 
 function parseContentLocale(raw: unknown): ContentLocale {
   return raw === "en" ? "en" : "zh";
@@ -142,10 +149,10 @@ function resolveRunLocale(opts: {
   return "zh";
 }
 
-// §条目持久化：entry-store 按 OUTPUT_DIR 绑定（逻辑抽到纯模块便于单测）。
-const loadEntryConfig = (key: string): EntryConfig | null => loadEntryFromDir(OUTPUT_DIR, key);
+// §条目持久化：entry-store 按 outputDir() 绑定（逻辑抽到纯模块便于单测）。
+const loadEntryConfig = (key: string): EntryConfig | null => loadEntryFromDir(outputDir(), key);
 const writeEntryConfig = (key: string, patch: Partial<EntryConfig>): EntryConfig =>
-  writeEntryToDir(OUTPUT_DIR, key, patch);
+  writeEntryToDir(outputDir(), key, patch);
 
 
 
@@ -156,12 +163,12 @@ function formatTimestamp(iso: string): string {
 function getRunDir(state: RunState): string {
   if (state.outputDir) return state.outputDir;
   const ts = formatTimestamp(state.startedAt);
-  return path.join(OUTPUT_DIR, ts);
+  return path.join(outputDir(), ts);
 }
 
 /** run 目录相对 `output/` 的路径（= 前端拿到的 `sourceDir`）。 */
 function runDirRel(state: RunState): string {
-  return path.relative(OUTPUT_DIR, getRunDir(state)).split(path.sep).join("/");
+  return path.relative(outputDir(), getRunDir(state)).split(path.sep).join("/");
 }
 
 /**
@@ -455,7 +462,7 @@ export function resolveAgentEntryBinding(
   applyConfirmedAssetOverrides(seededCtxBase, rootEntryKey, parsedAddr?.pipelineId);
   return {
     entryKey,
-    outputDir: path.join(OUTPUT_DIR, entryKey),
+    outputDir: path.join(outputDir(), entryKey),
     tier: cp?.tier ?? (cfg?.tier as TierId | undefined),
     mode: cp?.mode ?? (cfg?.mode as ModeId | undefined),
     userInput: cp?.userInput ?? cfg?.userInput,
@@ -739,7 +746,7 @@ function saveCheckpoint(state: RunState, stepId: string, ctx: NarrativeContext):
  */
 function loadCheckpoint(dir: string): CheckpointData | null {
   if (!parseRunDirName(dir)) return null;
-  const cpPath = path.join(OUTPUT_DIR, dir, "_checkpoint.json");
+  const cpPath = path.join(outputDir(), dir, "_checkpoint.json");
   if (!fs.existsSync(cpPath)) return null;
   try {
     return JSON.parse(fs.readFileSync(cpPath, "utf-8"));
@@ -754,19 +761,35 @@ app.use(express.json({ limit: "5mb" }));
 app.use((_req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Forgeax-Slug");
   if (_req.method === "OPTIONS") { res.sendStatus(204); return; }
   next();
 });
+// 双模式路径映射（M-A）：按请求头/查询参数/平台 active-game 磁盘 SSOT 解析 slug，
+// 写入本请求的 AsyncLocalStorage 上下文；下游 outputDir()/resolveNarrativeRoot()
+// 据此判定独立模式还是插件模式。平台没给这个进程注入项目根时零开销放行。
+app.use(narrativeArtifactContextMiddleware);
 
 const PORT = parseInt(readPluginEnv("NARRATIVE_PORT") ?? "8900", 10);
+
+// 被扩展 spawn 出来的服务是孤儿进程（一次性 CLI 起完就退，没人回收它）。
+// 扩展启动时注入 NARRATIVE_IDLE_TIMEOUT_MS，服务据此自行退出；Studio 托管时
+// 不注入，这里得到 0 就整个关掉，行为与今天完全一致。
+if (!process.env.VITEST) {
+  installIdleShutdown(app, {
+    timeoutMs: parseInt(readPluginEnv("NARRATIVE_IDLE_TIMEOUT_MS") ?? "0", 10) || 0,
+    busy: () => hasRunningPipeline(),
+  });
+}
+
 const LLM_PROXY_URL = getLlmProxyUrl();
 const LLM_PROXY_KEY = getLlmProxyKey();
 const API_KEY = getGeminiApiKey();
+const HOST_AGENT_CMD = getHostAgentCommand();
 
-if (!LLM_PROXY_URL && !API_KEY && !process.env.VITEST) {
+if (!LLM_PROXY_URL && !API_KEY && !HOST_AGENT_CMD && !process.env.VITEST) {
   // 测试环境（vitest）下允许缺 LLM 配置，使 server 模块可被单测 import（纯函数如 pickIpGenRunOutcome）。
-  console.error("❌ LLM_PROXY_URL or GEMINI_API_KEY environment variable is required");
+  console.error("❌ LLM_PROXY_URL, GEMINI_API_KEY or a host-agent command is required");
   process.exit(1);
 }
 
@@ -777,8 +800,33 @@ if (LLM_PROXY_URL && !LLM_PROXY_KEY) {
 
 if (LLM_PROXY_URL) {
   console.log(`🔗 Using LLM proxy: ${LLM_PROXY_URL}`);
-} else {
+} else if (API_KEY) {
   console.log("🔑 Using direct Gemini API key");
+} else if (HOST_AGENT_CMD) {
+  // 说清楚代价：借宿主模型每次调用都要重付它的系统提示词，慢且贵。用户看到
+  // 这一行就知道为什么比自带 key 慢，而不是以为服务卡住了。
+  console.log(
+    `🤝 Borrowing the host agent's model (${HOST_AGENT_CMD}) — ` +
+      `no narrative key configured, so each call pays the host's prompt overhead`,
+  );
+}
+
+/** 探针结论：借宿主模型这条路在本进程里到底通不通。undefined = 还没测。 */
+let hostAgentBlocked: string | undefined;
+
+/**
+ * 接活之前先确认借得到。
+ *
+ * 宿主的沙箱可能禁止本进程创建子进程，而借模型就是启动宿主的 CLI。不先问一句，
+ * 这件事要等到用户第一次生成跑到一半才以 `spawn EPERM` 的形式冒出来——那个位置
+ * 看起来像内容出了问题，其实是这台机器上这条路压根不通。
+ */
+async function checkHostAgent(): Promise<void> {
+  if (!HOST_AGENT_CMD || process.env.VITEST) return;
+  const failure = await probeHostAgent({ command: HOST_AGENT_CMD });
+  if (!failure) return;
+  hostAgentBlocked = failure.message;
+  console.error(`⛔ ${failure.message}`);
 }
 
 interface RunState {
@@ -849,6 +897,12 @@ interface RunState {
 
 const runs = new Map<string, RunState>();
 
+/** 空闲自结的「别动我」信号。声明式函数，供上方 installIdleShutdown 提前引用。 */
+function hasRunningPipeline(): boolean {
+  for (const state of runs.values()) if (state.status === "running") return true;
+  return false;
+}
+
 /**
  * Phase 1: 收到 pipeline_steps_announce 帧时刷新 state.pipelineSteps。
  * 同一次运行可能 emit 两次（启动时 + design_doc 完成后的二补帧），都以最新一帧为准。
@@ -873,7 +927,7 @@ function capturePipelineSteps(state: RunState, p: PipelineProgress): void {
 const RUN_MANIFEST_FILE = "_run_manifest.json";
 
 function loadRunManifest(dir: string): RunManifest | null {
-  const p = path.join(OUTPUT_DIR, dir, RUN_MANIFEST_FILE);
+  const p = path.join(outputDir(), dir, RUN_MANIFEST_FILE);
   if (!fs.existsSync(p)) return null;
   try {
     return JSON.parse(fs.readFileSync(p, "utf-8")) as RunManifest;
@@ -1064,8 +1118,64 @@ function applyRunTransition(state: RunState, event: RunTransitionEvent): void {
   writeManifestIncremental(state);
 }
 
+/**
+ * 谁在应答这个端口,不只是「有人在应答」。
+ *
+ * 这三个字段是给外壳做身份核对用的:端口上蹲着一个同样自称 narrative-studio、
+ * 但版本不同、key 不同、项目根不同的实例,是完全可能的(WSL 的 localhost 转发就
+ * 会把另一个系统里的旧服务映射到本机回环)。少了这些字段,外壳只能认"有人应答
+ * 即是我起的",然后代理一个它没配过的服务,并照自己的配置去汇报凭据来源。
+ */
 app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok", service: "narrative-studio", version: "0.4.0" });
+  res.json({
+    status: "ok",
+    service: "narrative-studio",
+    version: packageVersion(),
+    backend: LLM_PROXY_URL
+      ? "proxy"
+      : API_KEY
+        ? "gemini"
+        : HOST_AGENT_CMD
+          ? hostAgentBlocked ? "host-agent-blocked" : "host-agent"
+          : "none",
+    ...(hostAgentBlocked ? { backendError: hostAgentBlocked } : {}),
+    projectRoot: readPluginEnv("FORGEAX_PROJECT_ROOT") ?? null,
+  });
+});
+
+/**
+ * Generic tool dispatch for hosts that cannot load `tools` in-process the way
+ * Studio does — a Codex extension CLI, for instance, is a short-lived process.
+ * Routing through the same handler table keeps every host on one translation
+ * of tool name and arguments instead of one adapter per host.
+ */
+app.post("/api/tools/:name", async (req, res) => {
+  const name = String(req.params.name);
+  const toolId = `narrative:${name}`;
+  const handler = (tools as Record<string, unknown>)[toolId];
+  if (typeof handler !== "function") {
+    res.status(404).json({ error: `unknown_tool: ${toolId}` });
+    return;
+  }
+  const { args = {}, projectRoot, gameSlug } = (req.body ?? {}) as {
+    args?: Record<string, unknown>;
+    projectRoot?: string;
+    gameSlug?: string;
+  };
+  try {
+    const value = await (handler as (a: unknown, c: unknown) => Promise<unknown>)(args, {
+      caller: { kind: "extension" },
+      toolId,
+      env: { NARRATIVE_PORT: String(PORT) },
+      cwd: path.resolve(fileURLToPath(new URL(".", import.meta.url)), "../.."),
+      projectRoot,
+      gameSlug,
+    });
+    res.json({ ok: true, tool: toolId, value });
+  } catch (e) {
+    const error = e as Error & { code?: string };
+    res.status(error.code === "conflict" ? 409 : 500).json({ ok: false, tool: toolId, error: error.message });
+  }
 });
 
 /** 可用的 tier 和 mode 列表 */
@@ -1354,10 +1464,11 @@ app.post("/api/narrative/start", async (req, res) => {
     story_type,
     story_theme,
     narrative_structure,
-    /** Phase 6: legacy 回退开关。true = 跳过 Planner，走旧 buildAutoSteps 路径。 */
-    use_legacy_pipeline,
-    /** Blueprint 模式开关。true = 走 Blueprint + AgentRunner 新路径。 */
-    use_blueprint,
+    // M-E 下闸（叙事工坊平台接入对齐）：`use_legacy_pipeline` / `use_blueprint` 两个
+    // 开关曾经能从这个 HTTP 入参直接触达 `buildAutoSteps` 那条 @deprecated 冷路径
+    // 与 `runWithBlueprint` 平行执行路径，界面从不传，但外部调用者显式传 true 即可
+    // 跑出与席位管线不一致的步序。机制本身保留在 `launchNarrativeRun`/`pipeline.ts`
+    // 内部（供未来内部调用方或测试按需使用），只是这个入口不再对外接收这两个字段。
     /** M1: 上传剧本（前端把 .txt/.docx 解析后的原文 + 文件元信息传过来）。
      *  - content        utf8 剧本原文（.txt 走这里；前端可以直接 file.text()）
      *  - content_base64 二进制 base64（仅当 encoding="base64-docx" 时；服务端用 mammoth 解析）
@@ -1406,8 +1517,6 @@ app.post("/api/narrative/start", async (req, res) => {
     story_type?: string;
     story_theme?: string;
     narrative_structure?: string;
-    use_legacy_pipeline?: boolean;
-    use_blueprint?: boolean;
     entry_key?: string;
     locale?: ContentLocale;
     requested_steps?: string[];
@@ -1509,8 +1618,6 @@ app.post("/api/narrative/start", async (req, res) => {
     storyType: story_type,
     storyTheme: story_theme,
     narrativeStructure: narrative_structure,
-    useLegacyPipeline: use_legacy_pipeline,
-    useBlueprint: use_blueprint,
     entryKey: entry_key,
     locale,
     uploadedScript: parsedUploadedScript,
@@ -1713,7 +1820,7 @@ function launchNarrativeRun(p: LaunchRunParams): LaunchedRun {
     : undefined;
   const isPrimaryPipeline = placement?.primary ?? true;
   const runDir = placement?.runDir;
-  const reuseOutputDir = runDir ? path.join(OUTPUT_DIR, runDir) : undefined;
+  const reuseOutputDir = runDir ? path.join(outputDir(), runDir) : undefined;
 
   // A2-2: explicit genre_code makes manual routing implicit (we have genre + tier when both provided)
   const hasExplicitGenre = typeof genre_code === "string" && genre_code.trim().length > 0;
@@ -2139,7 +2246,7 @@ app.post("/api/narrative/resume", async (req, res) => {
     routeGroup: checkpoint.routeGroup,
     complexity: checkpoint.complexity ?? checkpoint.ctx.global_control_params?.complexity,
     model: resumeModel,
-    outputDir: path.join(OUTPUT_DIR, dir),
+    outputDir: path.join(outputDir(), dir),
     completedSteps: [...(checkpoint.completedSteps ?? [])],
     // Phase 1: 从 checkpoint 恢复"权威步骤序"与启动参数。
     // 这些字段让 resume 写新 checkpoint 时不丢失原始管线快照；
@@ -2676,7 +2783,7 @@ interface ReviewState {
 const ORIGINAL_SUBDIR = "_original";
 
 function loadEditsState(dir: string): EditsState {
-  const editsPath = path.join(OUTPUT_DIR, dir, "_edits.json");
+  const editsPath = path.join(outputDir(), dir, "_edits.json");
   if (fs.existsSync(editsPath)) {
     try {
       return normalizeEditsState(JSON.parse(fs.readFileSync(editsPath, "utf-8")));
@@ -2686,7 +2793,7 @@ function loadEditsState(dir: string): EditsState {
 }
 
 function saveEditsState(dir: string, state: EditsState): void {
-  const dirPath = path.join(OUTPUT_DIR, dir);
+  const dirPath = path.join(outputDir(), dir);
   fs.mkdirSync(dirPath, { recursive: true });
   writeAssetFile(dirPath, "_edits.json", state);
 }
@@ -2696,14 +2803,14 @@ function saveEditsState(dir: string, state: EditsState): void {
  * 覆盖进去会让"还原原文"还原到一个中间稿。
  */
 function saveOriginalContent(dir: string, stepId: string, nodeId: string | undefined, content: unknown): void {
-  const origDir = path.join(OUTPUT_DIR, dir, ORIGINAL_SUBDIR);
+  const origDir = path.join(outputDir(), dir, ORIGINAL_SUBDIR);
   fs.mkdirSync(origDir, { recursive: true });
   if (loadOriginalContent(dir, stepId, nodeId) != null) return;
   writeAssetFile(origDir, originalFileName(stepId, nodeId, content), content);
 }
 
 function loadOriginalContent(dir: string, stepId: string, nodeId?: string): unknown | null {
-  const origDir = path.join(OUTPUT_DIR, dir, ORIGINAL_SUBDIR);
+  const origDir = path.join(outputDir(), dir, ORIGINAL_SUBDIR);
   for (const name of originalFileCandidates(stepId, nodeId)) {
     const origPath = path.join(origDir, name);
     if (!fs.existsSync(origPath)) continue;
@@ -2717,7 +2824,7 @@ function loadOriginalContent(dir: string, stepId: string, nodeId?: string): unkn
 
 /** 丢掉原稿（还原之后它就没有意义了，留着只会让下次编辑误以为"已经存过原稿"）。 */
 function dropOriginalContent(dir: string, stepId: string, nodeId?: string): void {
-  const origDir = path.join(OUTPUT_DIR, dir, ORIGINAL_SUBDIR);
+  const origDir = path.join(outputDir(), dir, ORIGINAL_SUBDIR);
   for (const name of originalFileCandidates(stepId, nodeId)) {
     const p = path.join(origDir, name);
     try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch { /* best effort */ }
@@ -2787,7 +2894,7 @@ function snapshot<T>(v: T): T {
 
 /** 把改动后的 ctx 写回断点。编辑要能活过刷新，靠的就是这一步（`/history/:key/load` 以 checkpoint 为先）。 */
 function persistCheckpointCtx(dir: string, checkpoint: CheckpointData): void {
-  const dirPath = path.join(OUTPUT_DIR, dir);
+  const dirPath = path.join(outputDir(), dir);
   fs.mkdirSync(dirPath, { recursive: true });
   writeAssetFile(dirPath, "_checkpoint.json", checkpoint);
 }
@@ -2805,7 +2912,7 @@ function rewriteStepArtifacts(dir: string, stepId: string, ctx: NarrativeContext
   const stepData = getStepDataForFile(stepId, ctx);
   if (!fileDef || stepData == null) return;
   try {
-    const runDir = path.join(OUTPUT_DIR, dir);
+    const runDir = path.join(outputDir(), dir);
     fs.mkdirSync(runDir, { recursive: true });
     writeAssetFile(runDir, `${fileDef.index}_${fileDef.name}.${fileDef.ext}`, stepData);
     savePerNodeFiles(runDir, stepId, fileDef, stepData);
@@ -2839,7 +2946,7 @@ function snapshotStepArtifactVersion(
   const relPath = stepArtifactRelPath(stepId);
   if (!relPath) return undefined;
   try {
-    return snapshotVersion(path.join(OUTPUT_DIR, dir), relPath, wholeStepDataBeforeChange, origin);
+    return snapshotVersion(path.join(outputDir(), dir), relPath, wholeStepDataBeforeChange, origin);
   } catch (e) {
     console.error(`[snapshotStepArtifactVersion] ${dir}/${stepId}:`, e);
     return undefined;
@@ -3562,23 +3669,49 @@ function generateTextDiff(original: unknown, modified: unknown): string {
   return diff.slice(0, 200).join("\n") + (diff.length > 200 ? "\n...(truncated)" : "");
 }
 
+/**
+ * 动态步序解析（M-E：修影响面分析 / DAG 描述与真实执行的步序漂移）。
+ *
+ * `getModeConfig(mode).steps` 只是静态骨架，动态品类还要补齐运行时才展开的步骤。
+ * 此前这里唯一的展开手段是已标 `@deprecated` 的 `buildAutoSteps`——它与真正跑起来
+ * 时用的 `resolveSeatStepGroups`（席位管线，与 `previewAnnounce` 的品类分支同一份
+ * 事实源）不是同一份步序来源，会导致"影响面分析说会重跑 A、B"而实际重跑的是 A、C。
+ *
+ * 修法：`demand_analysis.genre_code` 能解出品类时优先走 `resolveSeatStepGroups`
+ * （与真实执行同源）；解不出（旧数据 / 非品类路由）才退回调用方传入的 legacy
+ * `buildAutoSteps` 兜底——不砍掉兜底本身，断供比给错步序更糟。
+ */
+function resolveDynamicAutoSteps(ctx: NarrativeContext | undefined, legacyFallback: () => string[]): string[] {
+  const genreCode = ctx?.demand_analysis?.genre_code;
+  if (genreCode) {
+    try {
+      const entry = findGenreByCode(genreCode);
+      if (entry) return resolveSeatStepGroups(entry.code, entry.tier).stepGroups;
+    } catch (e) {
+      console.warn("[dynamic-steps] seat step resolution failed, falling back to legacy:", (e as Error).message);
+    }
+  }
+  return legacyFallback();
+}
+
 function buildStepDAGDescription(mode: ModeId, ctx?: NarrativeContext): string {
   try {
     const config = getModeConfig(mode);
     const entries = [...config.steps];
     if (config.isDynamic && ctx) {
       const autoOpts = { genreCode: ctx.demand_analysis?.genre_code };
-      if (ctx.narrative_requirements) {
-        const autoSteps = buildAutoSteps(ctx.narrative_requirements, autoOpts);
-        const existing = new Set(entries.flatMap(e => Array.isArray(e) ? e : [e]));
-        for (const s of autoSteps) {
-          if (!existing.has(s)) entries.push(s);
+      const legacyFallback = (): string[] => {
+        if (ctx.narrative_requirements) return buildAutoSteps(ctx.narrative_requirements, autoOpts);
+        if (ctx.demand_analysis) {
+          const syntheticReq = {
+            needs: (ctx.demand_analysis as unknown as Record<string, unknown>).narrative_needs,
+          } as import("../types/game-design.js").NarrativeRequirements;
+          return buildAutoSteps(syntheticReq, autoOpts);
         }
-      } else if (ctx.demand_analysis) {
-        const syntheticReq = {
-          needs: (ctx.demand_analysis as unknown as Record<string, unknown>).narrative_needs,
-        } as import("../types/game-design.js").NarrativeRequirements;
-        const autoSteps = buildAutoSteps(syntheticReq, autoOpts);
+        return [];
+      };
+      if (ctx.narrative_requirements || ctx.demand_analysis) {
+        const autoSteps = resolveDynamicAutoSteps(ctx, legacyFallback);
         const existing = new Set(entries.flatMap(e => Array.isArray(e) ? e : [e]));
         for (const s of autoSteps) {
           if (!existing.has(s)) entries.push(s);
@@ -3675,17 +3808,20 @@ app.post("/api/narrative/analyze-impact", async (req, res) => {
     }
     if (config.isDynamic && checkpoint.ctx) {
       const autoOpts = { genreCode: checkpoint.ctx.demand_analysis?.genre_code };
-      if (checkpoint.ctx.narrative_requirements) {
-        const autoSteps = buildAutoSteps(checkpoint.ctx.narrative_requirements, autoOpts);
-        const existing = new Set(allSteps);
-        for (const s of autoSteps) {
-          if (!existing.has(s)) allSteps.push(s);
+      const legacyFallback = (): string[] => {
+        if (checkpoint.ctx!.narrative_requirements) return buildAutoSteps(checkpoint.ctx!.narrative_requirements, autoOpts);
+        if (checkpoint.ctx!.demand_analysis) {
+          const syntheticReq = {
+            needs: (checkpoint.ctx!.demand_analysis as unknown as Record<string, unknown>).narrative_needs,
+          } as import("../types/game-design.js").NarrativeRequirements;
+          return buildAutoSteps(syntheticReq, autoOpts);
         }
-      } else if (checkpoint.ctx.demand_analysis) {
-        const syntheticReq = {
-          needs: (checkpoint.ctx.demand_analysis as unknown as Record<string, unknown>).narrative_needs,
-        } as import("../types/game-design.js").NarrativeRequirements;
-        const autoSteps = buildAutoSteps(syntheticReq, autoOpts);
+        return [];
+      };
+      if (checkpoint.ctx.narrative_requirements || checkpoint.ctx.demand_analysis) {
+        // M-E：与真实执行同源——genre_code 能解出品类时走 resolveSeatStepGroups，
+        // 不能才退回 legacy buildAutoSteps（见 resolveDynamicAutoSteps 顶部注释）。
+        const autoSteps = resolveDynamicAutoSteps(checkpoint.ctx, legacyFallback);
         const existing = new Set(allSteps);
         for (const s of autoSteps) {
           if (!existing.has(s)) allSteps.push(s);
@@ -4066,7 +4202,7 @@ app.get("/api/narrative/story-tree/:dir", (req, res) => {
 });
 
 function loadReviewState(dir: string): ReviewState {
-  const reviewPath = path.join(OUTPUT_DIR, dir, "_review.json");
+  const reviewPath = path.join(outputDir(), dir, "_review.json");
   if (fs.existsSync(reviewPath)) {
     try {
       return JSON.parse(fs.readFileSync(reviewPath, "utf-8"));
@@ -4076,7 +4212,7 @@ function loadReviewState(dir: string): ReviewState {
 }
 
 function saveReviewState(dir: string, state: ReviewState): void {
-  const dirPath = path.join(OUTPUT_DIR, dir);
+  const dirPath = path.join(outputDir(), dir);
   fs.mkdirSync(dirPath, { recursive: true });
   state.updatedAt = new Date().toISOString();
   writeAssetFile(dirPath, "_review.json", state);
@@ -4166,7 +4302,7 @@ app.get("/api/narrative/status/:id", (req, res) => {
     entryKey: state.entryKey,
     pipelineId: state.manifest?.pipelineId ?? state.pipelineId,
     sourceDir: state.outputDir
-      ? path.relative(OUTPUT_DIR, state.outputDir).split(path.sep).join("/")
+      ? path.relative(outputDir(), state.outputDir).split(path.sep).join("/")
       : undefined,
     // 键权层：chat 侧无画布也能拿到与画布同源的两键亮灭判断（键权层调研 R1）。
     controls: historyControls(state.status, canResumeThisRun, false),
@@ -4247,6 +4383,68 @@ interface HistoryItem {
    * 不必再依赖画布广播的 postMessage 快照（键权层调研 R1）。
    */
   controls?: PipelineGuards;
+  /**
+   * `manifest.json` 的 cancelled 旗标透传（M-B 平台状态语言对齐）。此前只在内部
+   * 拿它去把 `status` 折成 interrupted，没投影出来——界面分不出"用户主动取消"
+   * 与"真的跑挂了"。不新增落盘字段，只是把已经在读的旗标暴露出来。
+   */
+  cancelled?: boolean;
+  /**
+   * IP DNA 半自动阶段门（§4.4①）：job 已经跑完标准化、停在"确认裁剪范围"这一步，
+   * 等用户/agent 回填才能继续——这与"还在标准化/建树"是两种要看的东西，此前都被
+   * `status="config"` 一起吞掉了。只对 IP DNA 条目有意义，普通叙事条目恒为 false。
+   */
+  awaitingConfirmation?: boolean;
+  /**
+   * 平台统一状态语言投影（未开始/可执行/执行中/等待确认/已完成/执行失败/已取消）。
+   * 纯派生，不新增落盘状态——「可执行」「等待确认」在我们自己的模型里本就是
+   * `status` + `cancelled` + `canResume` + `controls` + IP job 阶段门的派生量，
+   * 这里只是把派生结果显式命名，对齐平台语言。计算见 `derivePlatformStatus`。
+   */
+  platformStatus?: PlatformRunState;
+}
+
+/**
+ * 平台统一状态语言的七个值（M-B）。派生自既有字段，不是第二套事实源：
+ * `docs/contracts.md` §2 的落盘态只有 config/running/completed/interrupted/failed，
+ * 这里只做只读投影，任何一步都不写盘、不影响 `status`/`controls` 的既有计算。
+ */
+type PlatformRunState =
+  | "not_started"
+  | "executable"
+  | "running"
+  | "awaiting_confirmation"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+/**
+ * `status`（+ cancelled / canResume / controls / IP 阶段门）→ 平台七态。
+ *
+ * 「可执行」不是新枚举：`config` 态下若 controls 已判定有主键动作可点（用户已经把
+ * 输入/路由配完），就是"可执行"；`interrupted` 态下若 `canResume` 为真也算"可执行"
+ * （断点续传）。「等待确认」只在 IP DNA 阶段门场景成立，由调用方显式传入，不从
+ * `status` 反推——status="config" 同时覆盖"真的没配完"和"停在确认门"两种情况，
+ * 反推会把二者混淆（正是 M-B 要修的那个信息损失）。
+ */
+function derivePlatformStatus(args: {
+  status: string | undefined;
+  cancelled?: boolean;
+  canResume: boolean;
+  controls?: PipelineGuards;
+  awaitingConfirmation?: boolean;
+}): PlatformRunState {
+  const { status, cancelled, canResume, controls, awaitingConfirmation } = args;
+  if (awaitingConfirmation) return "awaiting_confirmation";
+  if (cancelled) return "cancelled";
+  if (status === "running") return "running";
+  if (status === "completed") return "completed";
+  if (status === "failed") return "failed";
+  if (status === "config") {
+    return controls?.primary && controls.primary !== "none" ? "executable" : "not_started";
+  }
+  if (status === "interrupted") return canResume ? "executable" : "failed";
+  return "not_started";
 }
 
 /** `effectiveStatus` 等历史列表用的松散字符串 → 键权层的四值枚举。 */
@@ -4284,7 +4482,7 @@ function loadIpDnaInputManifest(key: string): { story_id?: string; title?: strin
 /** output 运行目录是否已落生成产物（game_unit_*.json）。 */
 function outputHasGameUnits(dir: string): boolean {
   try {
-    return fs.readdirSync(path.join(OUTPUT_DIR, dir)).some((f) => /^game_unit_.*\.json$/.test(f));
+    return fs.readdirSync(path.join(outputDir(), dir)).some((f) => /^game_unit_.*\.json$/.test(f));
   } catch {
     return false;
   }
@@ -4300,11 +4498,11 @@ function outputHasGameUnits(dir: string): boolean {
 function loadGameUnitCtx(dir: string): NarrativeContext | null {
   try {
     const files = fs
-      .readdirSync(path.join(OUTPUT_DIR, dir))
+      .readdirSync(path.join(outputDir(), dir))
       .filter((f) => /^game_unit_.*\.json$/.test(f))
       .sort();
     if (files.length === 0) return null;
-    const raw = JSON.parse(fs.readFileSync(path.join(OUTPUT_DIR, dir, files[0]), "utf-8"));
+    const raw = JSON.parse(fs.readFileSync(path.join(outputDir(), dir, files[0]), "utf-8"));
     const ctx = (raw?.result ?? raw) as NarrativeContext;
     return ctx && typeof ctx === "object" ? ctx : null;
   } catch {
@@ -4389,6 +4587,22 @@ function findIpGenerationRun(key: string): RunState | undefined {
   return [...runs.values()].find((r) => r.status === "running" && r.id.startsWith(prefix));
 }
 
+/**
+ * 该 key 关联的活跃 IP job 是否正停在「确认裁剪范围」这道阶段门（§4.4①，M-B）。
+ *
+ * 与 `classifyActiveIpJob` 的粗粒度 "preprocessing" 分开报——否则"还在标准化/建树"
+ * 与"已经跑完、停下等你确认"会被同一个 `status="config"` 一起吞掉，界面拿不到
+ * "等待确认"这个平台语言态该对应哪个动作。只读投影，不改变 `classifyActiveIpJob`
+ * 既有的优先级契约与返回值。
+ */
+function activeIpJobAwaitingConfirmation(key: string): boolean {
+  for (const j of listJobs()) {
+    if (!j.story_timestamp || !key.startsWith(j.story_timestamp)) continue;
+    if (j.status === "awaiting_confirmation") return true;
+  }
+  return false;
+}
+
 function classifyActiveIpJob(key: string): "generating" | "preprocessing" | null {
   let cls: "generating" | "preprocessing" | null = null;
   for (const j of listJobs()) {
@@ -4413,7 +4627,11 @@ function buildIpDnaHistoryItem(
   const status = jobClass === "generating" ? "running"
     : jobClass === "preprocessing" ? "config"
     : hasUnits ? "completed" : "interrupted";
-  const hasFullResult = fs.existsSync(path.join(OUTPUT_DIR, key, "full_result.json"));
+  const hasFullResult = fs.existsSync(path.join(outputDir(), key, "full_result.json"));
+  // M-B：preprocessing 这个粗分类同时覆盖"还在标准化"和"已停下等确认"，界面区分
+  // 这两者要靠单独查一次 job 阶段（只在 preprocessing 时才查，其余分类不必付这个开销）。
+  const awaitingConfirmation = jobClass === "preprocessing" ? activeIpJobAwaitingConfirmation(key) : false;
+  const controls = historyControls(status, false, hasEdits);
   return {
     key,
     type: "dir",
@@ -4431,6 +4649,9 @@ function buildIpDnaHistoryItem(
     userInput: desc.title,
     kind: "ip-dna",
     generationRunId,
+    controls,
+    awaitingConfirmation,
+    platformStatus: derivePlatformStatus({ status, canResume: false, controls, awaitingConfirmation }),
   };
 }
 
@@ -4438,16 +4659,17 @@ function parseFilenameEntry(filename: string): HistoryItem | null {
   const match = filename.match(/^(.+?)_(tier\d|auto)_(.+)\.json$/);
   if (!match) return null;
   const [, ts, tierPart, modePart] = match;
-  const filePath = path.join(OUTPUT_DIR, filename);
+  const filePath = path.join(outputDir(), filename);
   try {
     const raw = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    const status = raw.status ?? "completed";
     return {
       key: filename,
       type: "file",
       id: raw.id ?? null,
       tier: raw.tier ?? tierPart,
       mode: raw.mode ?? modePart,
-      status: raw.status ?? "completed",
+      status,
       startedAt: raw.startedAt ?? ts.replace(/T/, " ").replace(/-/g, ":"),
       completedAt: raw.completedAt,
       fileCount: undefined,
@@ -4460,6 +4682,8 @@ function parseFilenameEntry(filename: string): HistoryItem | null {
       userInput: raw.userInput ?? raw.result?.user_input,
       routeGroup: raw.routeGroup,
       complexity: raw.complexity,
+      cancelled: !!raw.cancelled,
+      platformStatus: derivePlatformStatus({ status, cancelled: raw.cancelled, canResume: false }),
     };
   } catch {
     return null;
@@ -4471,7 +4695,7 @@ function dirHasEdits(dir: string): boolean {
   if (checkpoint?.step_meta) {
     if (Object.values(checkpoint.step_meta).some(m => m.modifications.length > 0)) return true;
   }
-  const editsPath = path.join(OUTPUT_DIR, dir, "_edits.json");
+  const editsPath = path.join(outputDir(), dir, "_edits.json");
   if (!fs.existsSync(editsPath)) return false;
   try {
     const data = JSON.parse(fs.readFileSync(editsPath, "utf-8"));
@@ -4530,7 +4754,7 @@ function aggregateLaneStatuses(statuses: readonly string[]): string {
  * 次泳道还没跑过（无 manifest）不计入聚合——不能把"从未开始"算成"中断"。
  */
 function subPipelineLaneStatuses(dir: string): string[] {
-  const subRoot = path.join(OUTPUT_DIR, dir, PIPELINE_SUBDIR);
+  const subRoot = path.join(outputDir(), dir, PIPELINE_SUBDIR);
   if (!fs.existsSync(subRoot)) return [];
   let subIds: string[];
   try {
@@ -4563,9 +4787,9 @@ function subPipelineLaneStatuses(dir: string): string[] {
 }
 
 function parseDirEntry(dir: string): HistoryItem {
-  const manifestPath = path.join(OUTPUT_DIR, dir, "manifest.json");
+  const manifestPath = path.join(outputDir(), dir, "manifest.json");
   const checkpoint = loadCheckpoint(dir);
-  const hasFullResult = fs.existsSync(path.join(OUTPUT_DIR, dir, "full_result.json"));
+  const hasFullResult = fs.existsSync(path.join(outputDir(), dir, "full_result.json"));
   const hasEdits = dirHasEdits(dir);
 
   const activeRun = [...runs.values()].find((r) => {
@@ -4597,6 +4821,8 @@ function parseDirEntry(dir: string): HistoryItem {
     const pipeCount = Array.isArray(entryForPipes?.pipelines)
       ? entryForPipes!.pipelines!.length
       : undefined;
+    const canResumeMain = !!checkpoint && effectiveStatus !== "completed" && effectiveStatus !== "running";
+    const controlsMain = historyControls(effectiveStatus, canResumeMain, hasEdits);
     return {
       key: dir,
       type: "dir",
@@ -4611,7 +4837,7 @@ function parseDirEntry(dir: string): HistoryItem {
       hasEdits,
       lastCompletedStep: checkpoint?.lastCompletedStep ?? null,
       completedSteps: migrateLegacyCompletedSteps(checkpoint?.completedSteps ?? raw.completedSteps ?? null),
-      canResume: !!checkpoint && effectiveStatus !== "completed" && effectiveStatus !== "running",
+      canResume: canResumeMain,
       canLoad: hasFullResult || !!checkpoint || outputHasGameUnits(dir),
       userInput: raw.userInput ?? activeRun?.userInput,
       routeGroup: raw.routeGroup ?? activeRun?.routeGroup,
@@ -4627,11 +4853,14 @@ function parseDirEntry(dir: string): HistoryItem {
       kind: raw.kind ?? undefined,
       generationRunId: ipGenerationRunId,
       pipelineCount: pipeCount,
-      controls: historyControls(
-        effectiveStatus,
-        !!checkpoint && effectiveStatus !== "completed" && effectiveStatus !== "running",
-        hasEdits,
-      ),
+      controls: controlsMain,
+      cancelled: !!raw.cancelled,
+      platformStatus: derivePlatformStatus({
+        status: effectiveStatus,
+        cancelled: raw.cancelled,
+        canResume: canResumeMain,
+        controls: controlsMain,
+      }),
     };
   } catch {
     // §条目持久化：无 output 运行清单但有 _entry.json（未生成的条目）→ 返回 status="config" 项，
@@ -4640,6 +4869,8 @@ function parseDirEntry(dir: string): HistoryItem {
     if (entryCfg) {
       const status = activeRun ? activeRun.status : ipJobClass === "generating" ? "running" : "config";
       const pipeCount = Array.isArray(entryCfg.pipelines) ? entryCfg.pipelines.length : undefined;
+      const controlsCfg = historyControls(status, false, hasEdits);
+      const awaitingConfirmationCfg = ipJobClass === "preprocessing" ? activeIpJobAwaitingConfirmation(dir) : false;
       return {
         key: dir,
         type: "dir",
@@ -4668,7 +4899,14 @@ function parseDirEntry(dir: string): HistoryItem {
         kind: entryCfg.ipRunKey ? "ip-dna" : undefined,
         generationRunId: ipGenerationRunId,
         pipelineCount: pipeCount,
-        controls: historyControls(status, false, hasEdits),
+        controls: controlsCfg,
+        awaitingConfirmation: awaitingConfirmationCfg,
+        platformStatus: derivePlatformStatus({
+          status,
+          canResume: false,
+          controls: controlsCfg,
+          awaitingConfirmation: awaitingConfirmationCfg,
+        }),
       };
     }
     // 无 output 运行清单：先尝试用 IP DNA 输入侧资产回填（user_asset_manifest.json 或 _hierarchy.json）。
@@ -4679,6 +4917,8 @@ function parseDirEntry(dir: string): HistoryItem {
     }
     const effectiveStatus = activeRun ? activeRun.status
       : checkpoint ? "interrupted" : "unknown";
+    const canResumeFallback = !!checkpoint && effectiveStatus !== "running";
+    const controlsFallback = historyControls(effectiveStatus, canResumeFallback, hasEdits);
     return {
       key: dir,
       type: "dir",
@@ -4691,7 +4931,7 @@ function parseDirEntry(dir: string): HistoryItem {
       hasEdits,
       lastCompletedStep: checkpoint?.lastCompletedStep ?? null,
       completedSteps: migrateLegacyCompletedSteps(checkpoint?.completedSteps ?? activeRun?.completedSteps ?? null),
-      canResume: !!checkpoint && effectiveStatus !== "running",
+      canResume: canResumeFallback,
       canLoad: hasFullResult || !!checkpoint,
       userInput: activeRun?.userInput ?? (checkpoint as any)?.userInput,
       routeGroup: activeRun?.routeGroup ?? (checkpoint as any)?.routeGroup,
@@ -4699,7 +4939,12 @@ function parseDirEntry(dir: string): HistoryItem {
       parentKey: activeRun?.parentKey,
       forkReason: activeRun?.forkReason,
       generationRunId: ipGenerationRunId,
-      controls: historyControls(effectiveStatus, !!checkpoint && effectiveStatus !== "running", hasEdits),
+      controls: controlsFallback,
+      platformStatus: derivePlatformStatus({
+        status: effectiveStatus,
+        canResume: canResumeFallback,
+        controls: controlsFallback,
+      }),
     };
   }
 }
@@ -4727,7 +4972,7 @@ app.post("/api/narrative/entry", (req, res) => {
 /** 列出本地保存的历史记录（扫描子目录 + 平铺 JSON 文件） */
 app.get("/api/narrative/history", (_req, res) => {
   try {
-    const all = fs.readdirSync(OUTPUT_DIR, { withFileTypes: true });
+    const all = fs.readdirSync(outputDir(), { withFileTypes: true });
     const items: HistoryItem[] = [];
 
     const outputKeys = new Set<string>();
@@ -4815,7 +5060,7 @@ app.get("/api/narrative/history/:key/load", (req, res) => {
   const key = req.params.key;
 
   if (key.endsWith(".json")) {
-    const filePath = path.join(OUTPUT_DIR, key);
+    const filePath = path.join(outputDir(), key);
     if (!fs.existsSync(filePath)) {
       res.status(404).json({ error: "File not found" });
       return;
@@ -4847,7 +5092,7 @@ app.get("/api/narrative/history/:key/load", (req, res) => {
     return;
   }
 
-  const dirPath = path.join(OUTPUT_DIR, key);
+  const dirPath = path.join(outputDir(), key);
   const fullResultPath = path.join(dirPath, "full_result.json");
   const checkpoint = loadCheckpoint(key);
   // G1：key 可以是 `<entryKey>` 或次管线的 `<entryKey>/pipelines/<pipelineId>`——两种形态都要能
@@ -5493,7 +5738,7 @@ function artifactRootsForAddress(
 ): Array<{ group: string; dir: string }> {
   const roots = runArtifactRoots(addr.entryKey);
   if (!addr.pipelineId) return roots;
-  const pipelineDir = path.join(OUTPUT_DIR, artifactRunDir(addr));
+  const pipelineDir = path.join(outputDir(), artifactRunDir(addr));
   if (!fs.existsSync(pipelineDir)) return roots;
   return [
     ...roots.filter((r) => r.group !== "output"),
@@ -5555,6 +5800,55 @@ app.get("/api/narrative/files/:runId", (req, res) => {
 });
 
 /**
+ * 把一份产物折成平台文件区（系统文件区）能定位的地址。
+ *
+ * 前端手里只有 `<group>/<相对路径>` 这种清单口径（见上面 `GET /files/:runId`），
+ * 而 `group` 是环节标签、不是磁盘目录名，真实目录在 `artifactRootsForAddress()`
+ * 里。加上双模式映射本身也只在后端（`src/runtime/artifact-root.ts`），所以折算
+ * 必须留在这一侧：前端复刻这两张表必然漂移。
+ *
+ * 只在插件模式下有答案；独立模式没有「游戏根」这个概念，据实回 `standalone`，
+ * 让前端把「定位」这个动作藏掉，而不是送一条文件区匹配不上的路径过去。
+ */
+app.get("/api/narrative/locate/:runId", (req, res) => {
+  const addr = addressFromRequest(req.params.runId, req.query as Record<string, unknown>);
+  if (!addr) {
+    res.status(400).json({ error: "Malformed artifact reference" });
+    return;
+  }
+  const rel = typeof req.query.path === "string" ? req.query.path.trim() : "";
+  if (!rel) {
+    res.status(400).json({ error: "Missing path" });
+    return;
+  }
+  const slash = rel.indexOf("/");
+  const group = slash < 0 ? rel : rel.slice(0, slash);
+  const within = slash < 0 ? "" : rel.slice(slash + 1);
+  const root = artifactRootsForAddress(addr).find((r) => r.group === group);
+  if (!root || !within) {
+    res.status(404).json({ ok: false, reason: "not-found" });
+    return;
+  }
+  // 目录逃逸防护：`within` 来自查询串，解析后必须仍落在这一环节的根之内。
+  const abs = path.resolve(root.dir, within);
+  const rootAbs = path.resolve(root.dir);
+  if (abs !== rootAbs && !abs.startsWith(rootAbs + path.sep)) {
+    res.status(400).json({ ok: false, reason: "escapes-root" });
+    return;
+  }
+  if (!fs.existsSync(abs)) {
+    res.status(404).json({ ok: false, reason: "not-found" });
+    return;
+  }
+  const gamePath = toGameRelativePath(abs);
+  if (!gamePath) {
+    res.json({ ok: false, reason: "standalone" });
+    return;
+  }
+  res.json({ ok: true, gamePath, name: path.basename(abs) });
+});
+
+/**
  * M2 版本溯源：某 run 目录下所有主干、所有历史版本的"为什么产生这一版"，
  * 一次性给全（键与 `GET /files/:runId` 的 `files[]` 同形，前端按 `LibraryFile.path`
  * 直接查表），不必逐个主干分别请求。没有 sidecar（旧快照、调用方未传 origin）的
@@ -5594,7 +5888,7 @@ app.get("/api/narrative/assets/:key", (req, res) => {
   }
   // 只要条目目录在就答得出来：早于 _entry.json 的历史条目一样能确认定稿
   // （writeEntry 是 upsert，缺的那份配置由第一次确认补上）。
-  if (!fs.existsSync(path.join(OUTPUT_DIR, key))) {
+  if (!fs.existsSync(path.join(outputDir(), key))) {
     res.status(404).json({ error: "entry not found" });
     return;
   }
@@ -5655,7 +5949,7 @@ app.post("/api/narrative/assets/:key", (req, res) => {
     res.status(400).json({ error: "path is required (`<group>/<相对路径>`)" });
     return;
   }
-  if (!fs.existsSync(path.join(OUTPUT_DIR, key))) {
+  if (!fs.existsSync(path.join(outputDir(), key))) {
     res.status(404).json({ error: "entry not found" });
     return;
   }
@@ -5733,7 +6027,7 @@ app.get("/api/narrative/file/:runId/{*filePath}", (req, res) => {
   const baseDir =
     matched?.dir ??
     roots.find((r) => r.group === "output")?.dir ??
-    path.join(OUTPUT_DIR, artifactRunDir(addr));
+    path.join(outputDir(), artifactRunDir(addr));
   const relPath = matched ? relRaw.slice(firstSeg.length + 1) : relRaw;
 
   const fullPath = path.resolve(baseDir, relPath);
@@ -5828,10 +6122,14 @@ setInterval(() => {
 }, 60_000);
 
 function cleanupStaleRunningManifests(): void {
-  if (!fs.existsSync(OUTPUT_DIR)) return;
+  // 这里只读不写，所以不能用 outputDir()——它调用即建目录，`existsSync` 因此
+  // 永远为真，等于先把要找的东西造出来再说它在。这跑在 listen 回调里、早于任何
+  // 请求，插件模式下还没有 slug，于是每次启动都在用户的工程根留一个空 output/。
+  const root = path.join(resolveNarrativeRoot(), "output");
+  if (!fs.existsSync(root)) return;
   let patched = 0;
-  for (const dir of fs.readdirSync(OUTPUT_DIR)) {
-    const manifestPath = path.join(OUTPUT_DIR, dir, "manifest.json");
+  for (const dir of fs.readdirSync(root)) {
+    const manifestPath = path.join(root, dir, "manifest.json");
     if (!fs.existsSync(manifestPath)) continue;
     try {
       const raw = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
@@ -6783,10 +7081,34 @@ app.post("/api/narrative/teams/:id/distil", async (req, res) => {
   })();
 });
 
+/**
+ * 独立模式下自己供界面。
+ *
+ * Studio 里界面是宿主挂的（清单 `entry: ./viz/dist/index.html`），这个 app 压根
+ * 不存在；插件模式下没有宿主来挂，于是 `open` 给出的地址会 404 —— 服务活着、
+ * 地址对着、点进去一片空白，这是最难自查的一种坏法。
+ *
+ * 放在所有 /api 路由之后：静态目录不该抢已注册的接口。兜底只回 index.html，
+ * 让前端路由自己认路，但不接管 /api —— 那样会把接口打错的 404 变成一份 HTML。
+ */
+const vizDir = fileURLToPath(new URL("../../viz/dist/", import.meta.url));
+if (fs.existsSync(path.join(vizDir, "index.html"))) {
+  app.use(express.static(vizDir));
+  app.get(/^(?!\/api\/).*/, (_req, res) => res.sendFile(path.join(vizDir, "index.html")));
+}
+
 // 测试环境（vitest）下不真正监听端口，使 server 模块可被单测 import（如 pickIpGenRunOutcome）。
-if (!process.env.VITEST) app.listen(PORT, () => {
+// 探针先跑完再开始应答：先说「我好了」再去发现自己借不到模型，等于把第一个
+// 提问的人推进那条不通的路。代价是启动多等一次进程启动的时间。
+if (!process.env.VITEST) void checkHostAgent().then(() => app.listen(PORT, () => {
   cleanupStaleRunningManifests();
-  console.log(`🚀 Narrative Studio API v0.4.0 running on http://localhost:${PORT}`);
+  console.log(`🚀 Narrative Studio API v${packageVersion()} running on http://localhost:${PORT}`);
+  if (fs.existsSync(path.join(vizDir, "index.html"))) {
+    console.log(`   UI:         GET  / (authoring interface)`);
+  } else {
+    // 说出来，否则 `open` 会递一个 404 的地址而没人知道为什么。
+    console.log(`   UI:         not bundled — \`open\` will hand out an address that 404s`);
+  }
   console.log(`   Health:     GET  /api/health`);
   console.log(`   Modes:      GET  /api/narrative/modes`);
   console.log(`   Start:      POST /api/narrative/start`);
@@ -6798,7 +7120,7 @@ if (!process.env.VITEST) app.listen(PORT, () => {
   console.log(`   History:    GET  /api/narrative/history`);
   console.log(`   Files:      GET  /api/narrative/files/:runId`);
   console.log(`   File:       GET  /api/narrative/file/:runId/:filePath(*)`);
-});
+}));
 
 // 仅供单测直接验证键权层方案 M4（终态跃迁单一写入口），不作为 HTTP 契约的一部分。
 export { applyRunTransition, finalizeRunManifest, initRunManifest, writeManifestIncremental };

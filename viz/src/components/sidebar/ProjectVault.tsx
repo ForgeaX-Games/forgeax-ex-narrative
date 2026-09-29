@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AtSign, ChevronDown, ChevronLeft, ChevronRight, FileText, Plus, Trash2, X } from "lucide-react";
+import { AtSign, Check, ChevronDown, ChevronLeft, ChevronRight, Crosshair, FileText, Plus, Trash2, X } from "lucide-react";
 import {
   addCategory,
   collectAsset,
@@ -15,7 +15,9 @@ import {
   type NarrativeProject,
   type ProjectAsset,
 } from "../../lib/projectVault";
-import { sendFileToComposer } from "../../lib/bridge";
+import { composerTarget, sendFileToComposer } from "../../lib/bridge";
+import { useMention } from "../../hooks/useMention";
+import { canLocateInContentBrowser, locateInContentBrowser } from "../../lib/locateArtifact";
 import { fetchRunFiles } from "../../hooks/useNarrativeStream";
 import { buildLibraryContents, CONTENT_TYPES, type LibraryFile } from "../../lib/contentTypes";
 import { useNarrativeStore } from "../../store/narrativeStore";
@@ -181,14 +183,32 @@ export function ProjectVault() {
     setCreating(false);
   }, [draftTitle, draftTags]);
 
-  const mentionAsset = useCallback((asset: ProjectAsset) => {
-    sendFileToComposer({
-      entryKey: asset.taskKey,
-      path: asset.path,
-      name: asset.name,
-      contentType: asset.contentType ?? undefined,
-    });
-  }, []);
+  const { flashed, mention } = useMention();
+  const toHost = composerTarget() === "host";
+
+  const mentionAsset = useCallback(
+    (asset: ProjectAsset) => {
+      mention(asset.id, () =>
+        sendFileToComposer({
+          entryKey: asset.taskKey,
+          path: asset.path,
+          name: asset.name,
+          contentType: asset.contentType ?? undefined,
+        }),
+      );
+    },
+    [mention],
+  );
+
+  /** @ 按钮的即时反馈：送去哪、成没成，都只说实际发生的那一种。 */
+  const mentionTitle = useCallback(
+    (key: string) => {
+      if (flashed?.key !== key) return t(toHost ? "lib.mentionFile" : "lib.copyFile");
+      if (flashed.delivery === "failed") return t("lib.copyFailed");
+      return t(flashed.delivery === "host" ? "lib.mentioned" : "lib.copied");
+    },
+    [flashed, t, toHost],
+  );
 
   // ── 项目内部：资产管理 ──────────────────────────────────────────────────
   if (opened) {
@@ -212,12 +232,30 @@ export function ProjectVault() {
             <button
               type="button"
               className="pi-at"
-              title={t("lib.mentionFile")}
-              aria-label={t("lib.mentionFile")}
+              title={mentionTitle(a.id)}
+              aria-label={t(toHost ? "lib.mentionFile" : "lib.copyFile")}
               onClick={() => mentionAsset(a)}
             >
-              <AtSign size={10} aria-hidden />
+              {flashed?.key === a.id && flashed.delivery !== "failed" ? (
+                <Check size={10} aria-hidden />
+              ) : (
+                <AtSign size={10} aria-hidden />
+              )}
             </button>
+            {/* 与任务侧同一个动作、同一条通道：定位到平台系统文件区。 */}
+            {canLocateInContentBrowser() && (
+              <button
+                type="button"
+                className="pi-at"
+                title={t("lib.locateFile")}
+                aria-label={t("lib.locateFile")}
+                onClick={() =>
+                  void locateInContentBrowser({ entryKey: a.taskKey, path: a.path, name: a.name })
+                }
+              >
+                <Crosshair size={10} aria-hidden />
+              </button>
+            )}
             <button
               type="button"
               className="pi-card__open"

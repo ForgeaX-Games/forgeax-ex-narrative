@@ -20,3 +20,20 @@ export function loadNarrativeAxes(): Promise<NarrativeAxesCatalog> {
 export function axisOptionLabel(opt: AxisOption): string {
   return getLocale() === "en" ? (opt.nameEn?.trim() || opt.name) : opt.name;
 }
+
+/**
+ * 按存盘时的名字反查显示名。
+ *
+ * 落盘的 `storyType` / `storyTheme` 存的是词表里的中文 `name`（后端按它索引），
+ * 所以历史列表直接把它贴到标签上，英文界面就会冒出「记忆与身份」。反查一次，
+ * 落盘的值不动，只有显示跟着语言走。三轴没加载好或查不到就照原样显示——
+ * 用户自定义的轴值本来就只有他自己写的那一个名字。
+ */
+export function axisLabelByName(axes: NarrativeAxesCatalog | null, name: string): string {
+  if (!axes) return name;
+  for (const axis of [axes.types, axes.themes, axes.structures]) {
+    const hit = axis.find((o) => o.name === name);
+    if (hit) return axisOptionLabel(hit);
+  }
+  return name;
+}

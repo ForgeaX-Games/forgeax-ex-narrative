@@ -15,8 +15,8 @@ import { loadNarrativeAxes, axisOptionLabel } from "../../lib/axesCache";
 import { useSingleAgentRun } from "../../hooks/useSingleAgentRun";
 import {
   computeAnchoredPipelines,
+  composerNodeLabel,
   isEntryNode,
-  CATEGORY_COLOR,
   composerUploads,
 } from "../../composer/composerCatalog";
 import { NodeProgressBar, NodeProgressRing, statusPct } from "../nodes/NodeProgress";
@@ -211,7 +211,6 @@ function ComposerFlowNodeRaw({ id, data, selected }: NodeProps<ComposerFlowData>
   const isStart = node.category === "input";
   const hasIncoming = composerEdges.some((e) => e.target === node.id);
   const hasOutgoing = composerEdges.some((e) => e.source === node.id);
-  const catColor = CATEGORY_COLOR[node.category];
   const set = (patch: Record<string, unknown>) => setComposerNodeConfig(node.id, patch);
   // 编辑内容即置为"待确认"（脏态）；点「确认」才置 confirmed。
   const setField = (patch: Record<string, unknown>) => set({ ...patch, confirmed: false });
@@ -397,7 +396,7 @@ function ComposerFlowNodeRaw({ id, data, selected }: NodeProps<ComposerFlowData>
   ];
 
   return (
-    <div className={cls} style={{ ["--cat-color" as string]: catColor }}>
+    <div className={cls}>
       {/* 起始节点（输入）无左把手；其余左侧出把手，空心=未连线 / 实心=已连线 */}
       {!isStart && (
         <Handle
@@ -416,7 +415,7 @@ function ComposerFlowNodeRaw({ id, data, selected }: NodeProps<ComposerFlowData>
       >
         <div className="rf-pipeline-header composer-node__head">
           <span className="composer-node__icon" aria-hidden>{node.icon}</span>
-          <span className="rf-pipeline-label composer-node__title">{node.label}</span>
+          <span className="rf-pipeline-label composer-node__title">{composerNodeLabel(t, node)}</span>
           {runStatus ? (
             <NodeProgressRing pct={runPct} status={runStatus} size={16} />
           ) : (
@@ -741,13 +740,13 @@ function ComposerFlowNodeRaw({ id, data, selected }: NodeProps<ComposerFlowData>
           {node.category === "assistant" && (
             <div className="composer-config__field">
               <span className="composer-config__label">{t("composer.cfg.strategy")}</span>
-              <span className="composer-config__readonly">{node.label}</span>
+              <span className="composer-config__readonly">{composerNodeLabel(t, node)}</span>
             </div>
           )}
           {node.category === "engineer" && (
             <div className="composer-config__field">
               <span className="composer-config__label">{t("composer.cfg.step")}</span>
-              <span className="composer-config__readonly">{node.stepId ?? node.label}</span>
+              <span className="composer-config__readonly">{node.stepId ?? composerNodeLabel(t, node)}</span>
             </div>
           )}
         </div>

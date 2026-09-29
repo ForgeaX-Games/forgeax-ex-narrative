@@ -18,8 +18,7 @@ import path from "node:path";
 import { normalizeAssets, type AssetRef, type EntryConfig } from "../../api/entry-store.js";
 import { runDirName } from "../../api/run-layout.js";
 import { currentVersionNumber, readVersionSnapshot } from "../../api/version-store.js";
-
-const OUTPUT_DIR = path.resolve(process.cwd(), "output");
+import { outputDir } from "../../runtime/artifact-root.js";
 
 export interface ConfirmedAsset {
   ref: AssetRef;
@@ -65,7 +64,7 @@ export function resolveConfirmedAssetContent(entryKey: string, ref: AssetRef): C
   if (group !== "output" || !relPath) {
     return { ref, content: undefined, resolvedVersion: ref.version ?? 0 };
   }
-  const runDir = path.join(OUTPUT_DIR, runDirName(entryKey, ref.pipelineId));
+  const runDir = path.join(outputDir(), runDirName(entryKey, ref.pipelineId));
   const live = currentVersionNumber(runDir, relPath);
   if (ref.version != null && ref.version < live) {
     const snap = readVersionSnapshot(runDir, relPath, ref.version);
@@ -84,7 +83,7 @@ export function resolveConfirmedAssetContent(entryKey: string, ref: AssetRef): C
  * 没有任何确认记录都返回空数组，不抛错。
  */
 export function listConfirmedAssets(entryKey: string, pipelineId?: string): ConfirmedAsset[] {
-  const entryPath = path.join(OUTPUT_DIR, entryKey, "_entry.json");
+  const entryPath = path.join(outputDir(), entryKey, "_entry.json");
   if (!fs.existsSync(entryPath)) return [];
   let cfg: EntryConfig;
   try {

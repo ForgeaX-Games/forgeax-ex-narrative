@@ -74,8 +74,6 @@ export const INITIAL_PLAN_COMPOSER: PromptComposer = {
 }
 \`\`\``,
     strategy: STRATEGY_SLOT_BLOCK,
-    style_guide: "{{SKILL.style_guide}}",
-    constraints: "{{SKILL.constraints}}",
     output_schema: `## 设计原则
 - 所有名字必须具体（禁止使用"主角""配角"等占位符）
 - story_structure.development 设置2-4个阶段，每阶段有自己的起伏
@@ -84,10 +82,13 @@ export const INITIAL_PLAN_COMPOSER: PromptComposer = {
     context_inputs: (ctx: NarrativeContext): string => buildUserPrompt(ctx),
     user_instructions: (ctx: NarrativeContext): string => userInstructionsBlock(ctx),
   },
-  // 策划文档是 stage=design：策略段紧跟任务，四轴策略先落盘，再谈品类风格与输出约束。
-  systemBlockOrder: ["role", "task_spec", "strategy", "style_guide", "constraints", "cot", "ip_source", "output_schema"],
+  // 策划文档是 stage=design：策略段紧跟任务，四轴策略先落盘，再谈机制与输出约束。
+  // 品类风格/约束不再单开 style_guide/constraints 块——genreStyleProvider 已注册进
+  // DEFAULT_PROVIDERS，同一份 skill.slots 内容随 strategy 段的 strategy_genre
+  // 子槽一起送出，不必（也不该）在这里再用 {{SKILL.*}} 占位符重复注入一遍。
+  systemBlockOrder: ["role", "task_spec", "strategy", "cot", "ip_source", "output_schema"],
   userBlockOrder: ["context_inputs", "user_instructions"],
-  skillSlots: ["style_guide", "constraints"],
+  skillSlots: [],
 };
 
 function buildUserPrompt(ctx: NarrativeContext): string {

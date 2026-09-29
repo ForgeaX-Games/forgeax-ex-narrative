@@ -32,6 +32,7 @@
   "permissions": [
     "fs:read:.forgeax/games/{slug}/narrative/**",
     "fs:write:.forgeax/games/{slug}/narrative/**",
+    "fs:read:.forgeax/active-game.json",
     "model:text:reasoning",
     "net:generativelanguage.googleapis.com",
     "emit:narrative.*"
@@ -43,9 +44,13 @@
     "NARRATIVE_MODEL",
     "SMALL_MODEL",
     "NARRATIVE_PORT",
+    "NARRATIVE_IDLE_TIMEOUT_MS",
     "NARRATIVE_AUTO_DEBUG",
     "NARRATIVE_AGENT_DEBUG",
     "NARRATIVE_DISABLE_EVAL",
+    "FORGEAX_PROJECT_ROOT",
+    "NARRATIVE_LLM_BACKEND",
+    "NARRATIVE_HOST_AGENT_CMD",
     "NARRATIVE_EMBED_URL",
     "NARRATIVE_EMBED_MODEL",
     "NARRATIVE_EMBED_DIM",
@@ -280,22 +285,44 @@
         "args": {
           "type": "object",
           "properties": {
-            "sourceDir": { "type": "string" },
-            "stepId": { "type": "string" },
-            "nodeId": { "type": "string" },
-            "editedContent": { "description": "省略则只回读当前内容、不写盘" },
-            "userInput": { "type": "string", "description": "这一改的说明/意图，供后续影响面分析与重新生成参考" }
+            "sourceDir": {
+              "type": "string"
+            },
+            "stepId": {
+              "type": "string"
+            },
+            "nodeId": {
+              "type": "string"
+            },
+            "editedContent": {
+              "description": "省略则只回读当前内容、不写盘"
+            },
+            "userInput": {
+              "type": "string",
+              "description": "这一改的说明/意图，供后续影响面分析与重新生成参考"
+            }
           },
-          "required": ["sourceDir", "stepId"]
+          "required": [
+            "sourceDir",
+            "stepId"
+          ]
         },
         "returns": {
           "type": "object",
           "properties": {
-            "ok": { "type": "boolean" },
-            "stepId": { "type": "string" },
-            "nodeId": { "type": "string" },
+            "ok": {
+              "type": "boolean"
+            },
+            "stepId": {
+              "type": "string"
+            },
+            "nodeId": {
+              "type": "string"
+            },
             "originalContent": {},
-            "persisted": { "type": "boolean" }
+            "persisted": {
+              "type": "boolean"
+            }
           }
         }
       },
@@ -308,18 +335,33 @@
         "args": {
           "type": "object",
           "properties": {
-            "sourceDir": { "type": "string" },
-            "stepId": { "type": "string" },
-            "nodeId": { "type": "string" }
+            "sourceDir": {
+              "type": "string"
+            },
+            "stepId": {
+              "type": "string"
+            },
+            "nodeId": {
+              "type": "string"
+            }
           },
-          "required": ["sourceDir", "stepId"]
+          "required": [
+            "sourceDir",
+            "stepId"
+          ]
         },
         "returns": {
           "type": "object",
           "properties": {
-            "ok": { "type": "boolean" },
-            "stepId": { "type": "string" },
-            "nodeId": { "type": "string" },
+            "ok": {
+              "type": "boolean"
+            },
+            "stepId": {
+              "type": "string"
+            },
+            "nodeId": {
+              "type": "string"
+            },
             "restoredContent": {}
           }
         }
@@ -337,7 +379,9 @@
               "type": "string",
               "description": "席位 id(先用 narrative:list-seats 查有哪些席、canRunStandalone 是否为真)，也接受直接传 step id"
             },
-            "userInput": { "type": "string" },
+            "userInput": {
+              "type": "string"
+            },
             "ctx": {
               "type": "object",
               "description": "补齐/覆盖上下文字段，如上游席位的产出"
@@ -346,23 +390,39 @@
               "type": "object",
               "description": "覆盖/追加输入字段，写入后再校验 requiredInputs"
             },
-            "model": { "type": "string" },
+            "model": {
+              "type": "string"
+            },
             "entryKey": {
               "type": "string",
               "description": "绑定到某条目并落盘(G2)；不给则只在响应体里回结果，不落盘"
             }
           },
-          "required": ["seatId"]
+          "required": [
+            "seatId"
+          ]
         },
         "returns": {
           "type": "object",
           "properties": {
-            "agentId": { "type": "string", "description": "实际执行的 AgentDef id(单步席解析到 step，多步席解析到 composite 外壳)" },
-            "requestedId": { "type": "string", "description": "仅当传入的 seatId 与 agentId 不同时返回" },
-            "outputField": { "type": "string" },
+            "agentId": {
+              "type": "string",
+              "description": "实际执行的 AgentDef id(单步席解析到 step，多步席解析到 composite 外壳)"
+            },
+            "requestedId": {
+              "type": "string",
+              "description": "仅当传入的 seatId 与 agentId 不同时返回"
+            },
+            "outputField": {
+              "type": "string"
+            },
             "output": {},
-            "entryKey": { "type": "string" },
-            "sourceDir": { "type": "string" }
+            "entryKey": {
+              "type": "string"
+            },
+            "sourceDir": {
+              "type": "string"
+            }
           }
         }
       },
@@ -406,15 +466,39 @@
               "items": {
                 "type": "object",
                 "properties": {
-                  "id": { "type": "string" },
-                  "featureId": { "type": "string" },
-                  "name": { "type": "string" },
-                  "kind": { "type": "string" },
-                  "status": { "type": "string" },
-                  "contentType": { "type": ["string", "null"] },
-                  "canRunStandalone": { "type": "boolean" },
-                  "runnableAgentId": { "type": "string" },
-                  "requiredInputs": { "type": "array", "items": { "type": "string" } }
+                  "id": {
+                    "type": "string"
+                  },
+                  "featureId": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "contentType": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "canRunStandalone": {
+                    "type": "boolean"
+                  },
+                  "runnableAgentId": {
+                    "type": "string"
+                  },
+                  "requiredInputs": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
                 }
               }
             }

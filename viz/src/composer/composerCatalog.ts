@@ -291,6 +291,34 @@ export function findCatalogItem(id: string): ComposerCatalogItem | undefined {
   return ITEM_INDEX[id];
 }
 
+/**
+ * 目录项在界面上显示的名字。
+ *
+ * 每个条目带两样东西：`labelKey` 是译文键，`label` 是后端注册表里的原名（中文）。
+ * 二十席助手与叙事路由的译文其实早就写好了，只是没有一处统一去读它，于是
+ * 各处直接渲染 `label`——英文界面上就冒出「需求清单助手」「去 AI 味助手」。
+ *
+ * 回落到原名而不是显示键名，是因为用户自建团队与现造的品类专家没有译文键，
+ * 它们的名字本来就是运行时才有的。
+ */
+export function itemLabel(
+  t: (key: string) => string,
+  item: Pick<ComposerCatalogItem, "labelKey" | "label">,
+): string {
+  if (!item.labelKey) return item.label;
+  const hit = t(item.labelKey);
+  return hit === item.labelKey ? item.label : hit;
+}
+
+/** 画布节点的显示名：节点只存 catalogId，名字每次按当前语言现解析。 */
+export function composerNodeLabel(
+  t: (key: string) => string,
+  node: { catalogId: string; label: string },
+): string {
+  const item = findCatalogItem(node.catalogId);
+  return item ? itemLabel(t, item) : node.label;
+}
+
 /** 拖拽 payload 的 MIME 键（HTML5 dataTransfer）。 */
 export const COMPOSER_DND_MIME = "application/x-forgeax-composer-role";
 
@@ -333,7 +361,7 @@ export function narrativeRouteItem(modeId: string, label: string): ComposerCatal
   return {
     id: `routing.narrative.${modeId}`,
     category: "routing",
-    labelKey: "",
+    labelKey: `route.${modeId}.label`,
     label,
     icon: "◈",
     routeGroup: "narrative",
@@ -363,15 +391,14 @@ export function customTeamItem(team: { id: string; status: string }, label: stri
   };
 }
 
-/** 角色主题色（节点边框/把手/小地图统一取此）。assistant 仅供旧节点回放着色。 */
-export const CATEGORY_COLOR: Record<ComposerNodeCategory, string> = {
-  input: "rgba(120,200,255,0.9)",
-  routing: "rgba(255,190,120,0.9)",
-  expert: "rgba(77,255,160,0.9)",
-  assistant: "rgba(200,150,255,0.9)",
-  engineer: "rgba(255,235,120,0.9)",
-  team: "rgba(255,150,200,0.9)",
-};
+/*
+ * 这里曾有一张 CATEGORY_COLOR：六个角色各一色，节点边框、把手和小地图都取它。
+ * 已删。设计规范里能用的颜色只有中性色、品牌色和四个带确定语义的状态色（成功 /
+ * 警告 / 错误 / 信息），它拼不出六个互不混淆的并列色，凑数就只能把「成功绿」派去
+ * 当专家节点——之后画布上的绿就同时可能是"跑完了"和"这是专家"，状态色自己先失效了。
+ * 角色是谁本来就写在节点上：每个节点带 `icon` 和 `composer.cat.*` 的文字标签，
+ * 颜色退出后这条信息一点没少。
+ */
 
 // ── 运行期编排数据（store composer 切片使用） ──────────────────────────────
 

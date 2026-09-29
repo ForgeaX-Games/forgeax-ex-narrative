@@ -20,11 +20,11 @@ export function statusPct(status: StepStatus | string, progress?: number): numbe
 }
 
 export function statusColor(status: StepStatus | string): string {
-  if (status === "completed") return "rgba(77,255,160,0.85)";
-  if (status === "running") return "rgba(255,107,53,0.9)";
-  if (status === "failed") return "rgba(255,80,80,0.8)";
-  if (status === "skipped") return "rgba(214,196,110,0.75)";
-  return "rgba(77,255,160,0.15)";
+  if (status === "completed") return "color-mix(in srgb, var(--color-status-success) 85%, transparent)";
+  if (status === "running") return "color-mix(in srgb, var(--color-status-warning) 90%, transparent)";
+  if (status === "failed") return "color-mix(in srgb, var(--color-status-error) 80%, transparent)";
+  if (status === "skipped") return "color-mix(in srgb, var(--color-status-warning) 75%, transparent)";
+  return "color-mix(in srgb, var(--color-status-success) 15%, transparent)";
 }
 
 export function NodeProgressRing({
@@ -61,7 +61,7 @@ export function NodeProgressRing({
 
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0 }}>
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth={1.5} />
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="color-mix(in srgb, var(--color-text-primary) 7%, transparent)" strokeWidth={1.5} />
       <circle
         cx={cx}
         cy={cy}

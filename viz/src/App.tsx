@@ -158,8 +158,6 @@ export function App() {
     prevStepsRef.current = snapshot;
   }, [activeSteps]);
 
-  const statusLabel = displayStatus === "running" ? t("app.status.generating") : displayStatus === "completed" ? t("app.status.done") : displayStatus === "interrupted" ? t("app.status.interrupted") : t("app.status.standby");
-
   const showSidebar = pane === "left" || pane === "full";
   const showCenter = pane === "center" || pane === "full";
   // 拖拽条仅在左右两栏同时可见（独立/并排 full 模式）时有意义；嵌入平台的 left 全宽模式不需要。
@@ -210,16 +208,12 @@ export function App() {
   return (
     <NarrativeRuntimeScope>
     <div className="app-root">
+      {/* 第一层只放插件名。运行状态归第四层右侧那条注释——它原本在这里、
+          左栏头、右栏头各有一份，同一件事说三遍。 */}
       {pane === "full" && (
         <header className="app-header">
           <div className="header-left">
             <span className="header-title">{t("app.title")}</span>
-            <span className="header-sub">{t("app.subtitle")}</span>
-          </div>
-          <div className="header-right">
-            <span className={`header-status ${displayStatus === "running" ? "running" : ""}`}>
-              {statusLabel}
-            </span>
           </div>
         </header>
       )}
@@ -231,11 +225,9 @@ export function App() {
             aria-label={t("app.sidebarAria")}
             style={resizable ? { width: sidebarWidth } : undefined}
           >
+            {/* 第二层：区域名。左边是记录与存档，右边是干活的地方。 */}
             <header className="narrative-pane-header">
               <span className="narrative-pane-title">{t("left.title")}</span>
-              <span className={`narrative-pane-pill ${displayStatus === "running" ? "running" : ""}`}>
-                {statusLabel}
-              </span>
             </header>
             <div className="tool-left-panel__body">
               <LeftPane />
@@ -259,9 +251,6 @@ export function App() {
           <div className="app-right-panel editor-center-workspace">
             <header className="narrative-pane-header cw-preview-header">
               <span className="narrative-pane-title">{t("app.previewTitle")}</span>
-              <span className={`narrative-pane-pill ${displayStatus === "running" ? "running" : ""}`}>
-                {statusLabel}
-              </span>
             </header>
             <div className="cw-toolbar">
               {/* 第二层：只放三类工具组；视图与缩放归底栏那条居中工具条。 */}

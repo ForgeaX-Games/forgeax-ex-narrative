@@ -82,6 +82,18 @@ export function runControls(s: RunStateInput): RunControls {
   return { state, cancelEnabled: false, primary: "start" };
 }
 
+/**
+ * 条目层：这个条目现在能不能改配置（需求 / 三轴 / 路由）。
+ *
+ * 与后端 `entryGuards().canEdit` 同构。`null`（从没跑过）为 false 是有意的：那时候
+ * 没有落盘条目可改，"改配置"这件事的对象还不存在——新任务走的是建条目，不是改条目。
+ */
+export function isEntryConfigEditable(
+  activeEntryStatus: RunStateInput["activeEntryStatus"],
+): boolean {
+  return activeEntryStatus === "completed" || activeEntryStatus === "interrupted";
+}
+
 /** 状态在界面上的文案键（i18n）。 */
 export const RUN_STATE_LABEL: Record<RunState, string> = {
   pending: "run.state.pending",

@@ -205,10 +205,10 @@ function ChildProgressRing({ enterDelay, skipAnim, ringDuration }: { enterDelay:
     return (
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}
         style={{ flexShrink: 0, marginLeft: "auto" }}>
-        <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(77,255,160,0.85)" strokeWidth={1.2} />
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="color-mix(in srgb, var(--color-status-success) 85%, transparent)" strokeWidth={1.2} />
         <polyline
           points={`${cx - 2.5},${cy} ${cx - 0.8},${cy + 2} ${cx + 3},${cy - 2}`}
-          fill="none" stroke="rgba(77,255,160,0.85)" strokeWidth={1.2}
+          fill="none" stroke="color-mix(in srgb, var(--color-status-success) 85%, transparent)" strokeWidth={1.2}
           strokeLinecap="round" strokeLinejoin="round"
         />
       </svg>
@@ -234,14 +234,14 @@ function ChildProgressRing({ enterDelay, skipAnim, ringDuration }: { enterDelay:
       <circle
         cx={cx} cy={cy} r={r}
         fill="none"
-        stroke="rgba(255,255,255,0.06)"
+        stroke="color-mix(in srgb, var(--color-text-primary) 6%, transparent)"
         strokeWidth={1.2}
       />
       <circle
         className="rf-child-progress-arc"
         cx={cx} cy={cy} r={r}
         fill="none"
-        stroke="rgba(77,255,160,0.7)"
+        stroke="color-mix(in srgb, var(--color-status-success) 70%, transparent)"
         strokeWidth={1.2}
         strokeLinecap="round"
         strokeDasharray={`0 ${circ.toFixed(1)}`}
@@ -251,7 +251,7 @@ function ChildProgressRing({ enterDelay, skipAnim, ringDuration }: { enterDelay:
         className="rf-child-progress-check"
         points={`${cx - 2.5},${cy} ${cx - 0.8},${cy + 2} ${cx + 3},${cy - 2}`}
         fill="none"
-        stroke="rgba(77,255,160,0.85)"
+        stroke="color-mix(in srgb, var(--color-status-success) 85%, transparent)"
         strokeWidth={1.2}
         strokeLinecap="round"
         strokeLinejoin="round"

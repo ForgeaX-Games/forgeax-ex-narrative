@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
-import { AtSign, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { AtSign, Check, Plus, Sparkles, Trash2, X } from "lucide-react";
 import {
   fetchGenres,
   type GenreCategoryGroup,
 } from "../../hooks/useNarrativeStream";
 import { useNarrativeStore, useNarrativePhase, type NavTab } from "../../store/narrativeStore";
 import { compositionLockReason, isCompositionEditable } from "../../store/phase";
+import { isEntryConfigEditable } from "../../store/runState";
 import {
   COMPOSER_DND_MIME,
   ENTRY_CATALOG_ID,
   customTeamItem,
   findCatalogItem,
   genreExpertItem,
+  itemLabel,
   narrativeRouteItem,
   type ComposerCatalogItem,
 } from "../../composer/composerCatalog";
@@ -27,7 +29,8 @@ import {
   type CustomTeamKind,
   type TeamMaterialGroup,
 } from "../../lib/customTeams";
-import { sendRoleToComposer } from "../../lib/bridge";
+import { composerTarget, roleReferenceText, sendEntryToComposer, sendRoleToComposer } from "../../lib/bridge";
+import { useMention } from "../../hooks/useMention";
 import type { ModeId, TierId } from "../../types";
 import { useT, getLocale } from "../../i18n";
 
@@ -51,10 +54,31 @@ const SEAT_ROUTE: Readonly<Record<string, ModeId>> = {
   narrative_card: "narrative_card" as ModeId,
 };
 
-/** 把一个角色项塞进 dataTransfer——与画布 onDrop 读的是同一个 MIME。 */
+/**
+ * 把一个角色项塞进 dataTransfer——与画布 onDrop 读的是同一个 MIME。
+ *
+ * `text/plain` 是拖出本页之后唯一还在的那份载荷。嵌在平台里时宿主自有结构化通道，
+ * 裸名字够用；独立形态下这一拖的落点是外部对话框，此时给完整引用文本，
+ * 让它和 @ 按钮送出去的是同一样东西。
+ */
 function startRoleDrag(e: React.DragEvent, item: ComposerCatalogItem, label: string): void {
   e.dataTransfer.setData(COMPOSER_DND_MIME, JSON.stringify({ catalogId: item.id, item }));
-  e.dataTransfer.setData("text/plain", label);
+  e.dataTransfer.setData(
+    "text/plain",
+    composerTarget() === "host"
+      ? label
+      : roleReferenceText({
+          name: label,
+          category: item.category,
+          catalogId: item.id,
+          pipelineTemplate: item.pipelineTemplate,
+          tier: item.tier ?? null,
+          routeGroup: item.routeGroup,
+          stepId: item.stepId,
+          modeId: item.modeId,
+          teamId: item.teamId,
+        }),
+  );
   e.dataTransfer.effectAllowed = "copy";
 }
 
@@ -101,6 +125,7 @@ export function CenterToolbar() {
   const pendingGroupRef = useRef<string>("");
   const [newGroupTitle, setNewGroupTitle] = useState("");
   const [menuX, setMenuX] = useState<number | null>(null);
+  const [menuW, setMenuW] = useState<number | null>(null);
 
   /**
    * 生产前后的编排闸门。
@@ -113,6 +138,11 @@ export function CenterToolbar() {
   const phase = useNarrativePhase();
   const canCompose = isCompositionEditable(phase);
   const lockReason = compositionLockReason(phase);
+
+  /** @ 入口时要不要带上当前条目键——不可改配置时不带，退回"另起一个任务"。 */
+  const activeEntryKey = useNarrativeStore((s) => s.activeEntryKey);
+  const activeEntryStatus = useNarrativeStore((s) => s.activeEntryStatus);
+  const entryConfigEditable = isEntryConfigEditable(activeEntryStatus);
 
   useEffect(() => {
     if (openTab !== "experts" || genres.length > 0) return;
@@ -136,13 +166,24 @@ export function CenterToolbar() {
     return () => document.removeEventListener("mousedown", onDown);
   }, [openTab, setOpenTab]);
 
-  /** 菜单左沿对齐打开它的那个 tab；窗口尺寸变了要重量一次，否则菜单会漂在旧位置。 */
+  /**
+   * 菜单左沿对齐打开它的那个 tab，且至少与它同宽；窗口尺寸变了要重量一次，
+   * 否则菜单会漂在旧位置。
+   *
+   * 宽度也在这里量而不是写死：三个 tab 等宽，但那个宽度由最长标签决定，会随语言变；
+   * 菜单自己的宽度则由内容撑（三族分别是 204 / 251 / 410px）。不取齐的话，
+   * 一个 268px 的按钮下面会挂出一个 204px 的抽屉——比按钮窄一截，读起来像没对齐。
+   * 取下界而不是取等：比按钮宽是正常的菜单形态，比按钮窄才是坏的。
+   */
   useEffect(() => {
     if (!openTab) return;
     const measure = () => {
       // tab 的 offsetParent 就是 position:relative 的 .cw-topnav，与面板同一坐标系。
       const tab = barRef.current?.querySelector<HTMLElement>(`[data-tab="${openTab}"]`);
-      if (tab) setMenuX(tab.offsetLeft);
+      if (tab) {
+        setMenuX(tab.offsetLeft);
+        setMenuW(tab.offsetWidth);
+      }
     };
     measure();
     window.addEventListener("resize", measure);
@@ -159,19 +200,37 @@ export function CenterToolbar() {
     [setRouting, setRoutingConfigured, notifyConfigChange],
   );
 
-  const mention = useCallback((item: ComposerCatalogItem, label: string) => {
-    sendRoleToComposer({
-      name: label,
-      category: item.category,
-      catalogId: item.id,
-      pipelineTemplate: item.pipelineTemplate,
-      tier: item.tier ?? null,
-      routeGroup: item.routeGroup,
-      stepId: item.stepId,
-      modeId: item.modeId,
-      teamId: item.teamId,
-    });
-  }, []);
+  const { flashed, mention: flashMention } = useMention();
+  const toHost = composerTarget() === "host";
+
+  const mention = useCallback(
+    (item: ComposerCatalogItem, label: string) => {
+      flashMention(`role:${item.id}`, () =>
+        sendRoleToComposer({
+          name: label,
+          category: item.category,
+          catalogId: item.id,
+          pipelineTemplate: item.pipelineTemplate,
+          tier: item.tier ?? null,
+          routeGroup: item.routeGroup,
+          stepId: item.stepId,
+          modeId: item.modeId,
+          teamId: item.teamId,
+        }),
+      );
+    },
+    [flashMention],
+  );
+
+  /** @ 按钮的即时反馈：送去哪、成没成，都只说实际发生的那一种。 */
+  const mentionTitle = useCallback(
+    (key: string, idle: string) => {
+      if (flashed?.key !== key) return t(idle);
+      if (flashed.delivery === "failed") return t("lib.copyFailed");
+      return t(flashed.delivery === "host" ? "lib.mentioned" : "lib.copied");
+    },
+    [flashed, t],
+  );
 
   /** 末级工具行：@ 送进对话框，行本身可拖进画布，点一下则落成当前配置。 */
   const renderLeaf = (opts: {
@@ -194,11 +253,15 @@ export function CenterToolbar() {
       <button
         type="button"
         className="cw-menu__at"
-        title={t("lib.mentionAssistant")}
-        aria-label={t("lib.mentionAssistant")}
+        title={mentionTitle(`role:${opts.item.id}`, toHost ? "lib.mentionAssistant" : "lib.copyAssistant")}
+        aria-label={t(toHost ? "lib.mentionAssistant" : "lib.copyAssistant")}
         onClick={(e) => { e.stopPropagation(); mention(opts.item, opts.label); }}
       >
-        <AtSign size={10} aria-hidden />
+        {flashed?.key === `role:${opts.item.id}` && flashed.delivery !== "failed" ? (
+          <Check size={10} aria-hidden />
+        ) : (
+          <AtSign size={10} aria-hidden />
+        )}
       </button>
       <button
         type="button"
@@ -213,6 +276,58 @@ export function CenterToolbar() {
       </button>
     </div>
   );
+
+  /**
+   * 一个任务的初始需求，列在助手团队第一行。可拖进画布，也可 @ 进对话栏。
+   *
+   * 画布默认自带一枚种子入口节点，但那枚是数据层种下的：删掉之后界面上再没有第二个
+   * 地方能把它拿回来。归到助手团队而不是自成一栏：它配的是这一跑按什么生成，
+   * 与团队里的席位是同一件事的两端，单独立一栏反而读不出它跟谁有关。
+   *
+   * 两个动作的闸门不同，因为做的不是同一件事：
+   *  - **拖**进画布是改编排，受 `canCompose` 约束（图落盘后再动会造成磁盘一张、
+   *    眼前一张，进度帧回填的是磁盘那份）。
+   *  - **@** 进对话栏走 `create-entry`，不碰当前那张已落盘的图，所以一直可用；
+   *    只是当前条目不可改配置时退回"另起一个任务"——那是那一刻唯一做得到的事。
+   */
+  const entryLeaf = (() => {
+    const item = findCatalogItem(ENTRY_CATALOG_ID);
+    if (!item) return null;
+    const label = t("composer.entryDrag.label");
+    const targetKey = entryConfigEditable ? activeEntryKey ?? undefined : undefined;
+    return (
+      <div
+        key={ENTRY_CATALOG_ID}
+        className={`cw-menu__leaf cw-menu__leaf--entry${canCompose ? "" : " is-locked"}`}
+        draggable={canCompose}
+        onDragStart={(e) => canCompose && startRoleDrag(e, item, label)}
+        title={canCompose ? t("composer.entryDrag.hint") : t(lockReason ?? "composer.locked.confirmed")}
+      >
+        <button
+          type="button"
+          className="cw-menu__at"
+          title={mentionTitle(
+            ENTRY_CATALOG_ID,
+            toHost
+              ? targetKey ? "composer.entryMention.thisTask" : "composer.entryMention.newTask"
+              : "lib.copyEntry",
+          )}
+          aria-label={t(toHost ? "lib.mentionAssistant" : "lib.copyEntry")}
+          onClick={(e) => {
+            e.stopPropagation();
+            flashMention(ENTRY_CATALOG_ID, () => sendEntryToComposer(label, targetKey));
+          }}
+        >
+          {flashed?.key === ENTRY_CATALOG_ID && flashed.delivery !== "failed" ? (
+            <Check size={10} aria-hidden />
+          ) : (
+            <AtSign size={10} aria-hidden />
+          )}
+        </button>
+        <span className="cw-menu__item cw-menu__item--leaf">{label}</span>
+      </div>
+    );
+  })();
 
   const genreName = (() => {
     if (!routing.genreCode) return null;
@@ -285,7 +400,7 @@ export function CenterToolbar() {
 
   return (
     <div className="cw-topnav" ref={rootRef}>
-      <div className="cw-topnav__bar" role="tablist" aria-label={t("nav.aria")} ref={barRef}>
+      <div className="pane-tabs" role="tablist" aria-label={t("nav.aria")} ref={barRef}>
         {TABS.map((tab) => {
           const open = openTab === tab.id;
           return (
@@ -296,7 +411,7 @@ export function CenterToolbar() {
               role="tab"
               aria-selected={open}
               aria-expanded={open}
-              className={`cw-topnav__tab${open ? " is-open" : ""}`}
+              className={`pane-tab${open ? " is-open" : ""}`}
               title={summaries[tab.id]}
               onClick={() => setOpenTab(open ? null : tab.id)}
             >
@@ -304,25 +419,6 @@ export function CenterToolbar() {
             </button>
           );
         })}
-        {/*
-         * 第二枚需求入口：画布默认自带一枚种子入口节点，但那枚是数据层种下的，
-         * 顶栏此前没有任何可拖入口——"自由组织多条管线"这条设计在算法与后端就绪
-         * 的情况下，界面上用不上。这一枚可拖可重复：拖几次就锚几条独立管线。
-         */}
-        <div
-          className={`cw-topnav__tab cw-topnav__entry${canCompose ? "" : " is-locked"}`}
-          draggable={canCompose}
-          onDragStart={(e) => {
-            if (!canCompose) return;
-            const item = findCatalogItem(ENTRY_CATALOG_ID);
-            if (item) startRoleDrag(e, item, t("composer.entryDrag.label"));
-          }}
-          title={canCompose ? t("composer.entryDrag.hint") : t(lockReason ?? "composer.locked.confirmed")}
-          aria-label={t("composer.entryDrag.label")}
-        >
-          <Plus size={12} aria-hidden />
-          {t("composer.entryDrag.label")}
-        </div>
       </div>
 
       {openTab && (
@@ -330,7 +426,11 @@ export function CenterToolbar() {
           className="cw-topnav__panel"
           role="region"
           aria-label={t("nav.aria")}
-          style={menuX === null ? undefined : ({ "--cw-menu-x": `${menuX}px` } as CSSProperties)}
+          style={
+            menuX === null
+              ? undefined
+              : ({ "--cw-menu-x": `${menuX}px`, "--cw-menu-w": `${menuW ?? 0}px` } as CSSProperties)
+          }
         >
           {openTab === "experts" && (
             <>
@@ -374,8 +474,14 @@ export function CenterToolbar() {
 
           {openTab === "units" && (
             <div className="cw-menu cw-menu--leaf">
+              {entryLeaf}
               {ASSISTANT_SEATS.map((seat) => {
                 const route = SEAT_ROUTE[seat.id];
+                // 席位注册表给的是后端原名（中文）；界面显示走译文，二十席都有。
+                const seatLabel = itemLabel(t, {
+                  labelKey: `composer.item.engineer.${seat.id}`,
+                  label: seat.name,
+                });
                 const runnable = !!route && seat.status === "active";
                 const active = runnable && routing.routeGroup === "narrative" && routing.narrativeRoute === route;
                 // 不进默认步序的席位要在菜单上说清楚，否则百科娘这类"跑管线永远
@@ -383,7 +489,7 @@ export function CenterToolbar() {
                 const role = seat.pipelineRole === "default" ? null : seat.pipelineRole;
                 return renderLeaf({
                   key: seat.id,
-                  label: seat.name,
+                  label: seatLabel,
                   title: [
                     runnable
                       ? t(`route.${route}.hint`)
@@ -397,12 +503,12 @@ export function CenterToolbar() {
                   badge: role ? { text: t(`nav.seat.role.${role}`), kind: role } : undefined,
                   active,
                   item: runnable
-                    ? narrativeRouteItem(route, seat.name)
+                    ? narrativeRouteItem(route, seatLabel)
                     : {
                         id: `engineer.${seat.id}`,
                         category: "engineer" as const,
                         labelKey: `composer.item.engineer.${seat.id}`,
-                        label: seat.name,
+                        label: seatLabel,
                         icon: "▣",
                         seatId: seat.id,
                         stepId: seatPrimaryStep(seat.id),

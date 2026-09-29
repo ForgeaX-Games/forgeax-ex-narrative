@@ -3,7 +3,9 @@ import { Handle, Position, type NodeProps } from "reactflow";
 import type { StepStatus } from "../../types";
 import { NodeProgressBar, NodeProgressRing, statusColor, statusPct } from "./NodeProgress";
 import { useT } from "../../i18n";
-import { resolveGraphNodeLabel, resolveSeatLabel } from "../../i18n/graphLabels";
+import { resolveGraphNodeLabel, resolvePipelineName, resolveSeatLabel } from "../../i18n/graphLabels";
+import { useGenreName } from "../../lib/genreCache";
+import { useNarrativeStore } from "../../store/narrativeStore";
 
 interface PhaseInfo {
   id: string;
@@ -28,9 +30,20 @@ interface StoryGroupData {
 function StoryGroupNodeRaw({ data, id }: NodeProps<StoryGroupData>) {
   const t = useT();
   const { label, sublabel, seatId, status, childCount, expanded, progress, phases } = data;
+  // 专家容器的标题 announce 只给中文（「JRPG专家」）。品类目录是后端按语言下发的，
+  // 所以不去反查那个中文串，直接拿本次运行的品类 code 现拼——换语言立刻跟上。
+  // 取 activeConfig 而非 routing：前者是这条条目的启动快照，后者是顶栏当下的草稿，
+  // 翻旧任务时草稿可能早改成别的品类了。
+  const genreName = useGenreName(id.startsWith("expert::"));
+  const genreCode = useNarrativeStore(
+    (s) => s.activeConfig?.genreCode ?? s.routing.genreCode,
+  );
+  const expertName = id.startsWith("expert::") ? genreName(genreCode) : null;
   const displayLabel = seatId
     ? resolveSeatLabel(seatId, label)
-    : resolveGraphNodeLabel(id, label);
+    : expertName && expertName !== genreCode
+      ? t("nav.suffix.expert", { name: expertName })
+      : resolveGraphNodeLabel(id, label);
 
   const dotColor = statusColor(status);
   const pct = statusPct(status, progress);
@@ -41,9 +54,9 @@ function StoryGroupNodeRaw({ data, id }: NodeProps<StoryGroupData>) {
       <Handle type="target" position={Position.Left} className="rf-handle" />
 
       <div className="rf-story-group-header">
-        <span style={{ fontSize: 8, color: dotColor, pointerEvents: "none" }}>◈</span>
+        <span style={{ fontSize: "var(--text-caption)", color: dotColor, pointerEvents: "none" }}>◈</span>
         <span className="rf-story-group-label">{displayLabel}</span>
-        {sublabel && <span className="rf-story-group-sublabel">{sublabel}</span>}
+        {sublabel && <span className="rf-story-group-sublabel">{resolvePipelineName(sublabel)}</span>}
         {childCount > 0 && (
           <span className="rf-story-group-count">{childCount}</span>
         )}

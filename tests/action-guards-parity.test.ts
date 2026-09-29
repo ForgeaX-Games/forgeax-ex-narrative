@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { runControls, type RunStateInput } from "../viz/src/store/runState.js";
+import { runControls, isEntryConfigEditable, type RunStateInput } from "../viz/src/store/runState.js";
 import {
   pipelineGuards,
   entryGuards,
@@ -96,6 +96,16 @@ describe("键权层 M1 — entryGuards()", () => {
     expect(g.canEdit).toBe(true);
     expect(g.canStart).toBe(false);
     expect(g.canCreateLane).toBe(false);
+  });
+
+  // 画布侧的 `isEntryConfigEditable()` 决定 @ 入口带不带当前条目键：不可改配置时
+  // 不带，退回"另起一个任务"。它与 canEdit 是同一条判据，抄两遍就会漂。
+  it("画布 isEntryConfigEditable() 与后端 canEdit 同构", () => {
+    for (const entryStatus of ["running", "completed", "interrupted", null] as const) {
+      expect(isEntryConfigEditable(entryStatus)).toBe(
+        entryGuards({ entryStatus, hasConflictingRun: false }).canEdit,
+      );
+    }
   });
 });
 

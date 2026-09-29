@@ -50,7 +50,7 @@ describe("聊天附件 → narrative 摄入工具", () => {
 
   it("文本附件按 utf8 正文送出，文件名与 MIME 由路径推断", async () => {
     fs.writeFileSync(path.join(root, "第一章.md"), "# 开场\n她推开门。", "utf-8");
-    await ingest({ files: [{ path: "第一章.md" }] }, { cwd: root, toolId: "t", caller: { kind: "test" } });
+    await ingest({ files: [{ path: "第一章.md" }] }, { projectRoot: root, toolId: "t", caller: { kind: "test" } });
 
     expect(captured!.files).toHaveLength(1);
     const f = captured!.files[0]!;
@@ -63,7 +63,7 @@ describe("聊天附件 → narrative 摄入工具", () => {
 
   it("docx 附件转 base64-docx（正文交后端 mammoth 抽，本层只搬字节）", async () => {
     fs.writeFileSync(path.join(root, "全稿.docx"), Buffer.from([0x50, 0x4b, 0x03, 0x04]));
-    await ingest({ files: [{ path: "全稿.docx" }] }, { cwd: root, toolId: "t", caller: { kind: "test" } });
+    await ingest({ files: [{ path: "全稿.docx" }] }, { projectRoot: root, toolId: "t", caller: { kind: "test" } });
 
     const f = captured!.files[0]!;
     expect(f.encoding).toBe("base64-docx");
@@ -73,7 +73,7 @@ describe("聊天附件 → narrative 摄入工具", () => {
 
   it("其他二进制走裸 base64，不冒充 docx", async () => {
     fs.writeFileSync(path.join(root, "封面.png"), Buffer.from([0x89, 0x50]));
-    await ingest({ files: [{ path: "封面.png" }] }, { cwd: root, toolId: "t", caller: { kind: "test" } });
+    await ingest({ files: [{ path: "封面.png" }] }, { projectRoot: root, toolId: "t", caller: { kind: "test" } });
 
     const f = captured!.files[0]!;
     expect(f.encoding).toBeUndefined();
@@ -88,7 +88,7 @@ describe("聊天附件 → narrative 摄入工具", () => {
         files: [{ path: "a.txt" }, { fileName: "b.txt", content: "手给的", role: "setting" }],
         title: "混合",
       },
-      { cwd: root, toolId: "t", caller: { kind: "test" } },
+      { projectRoot: root, toolId: "t", caller: { kind: "test" } },
     );
 
     expect(captured!.files.map((f) => f.content)).toEqual(["盘上的", "手给的"]);
@@ -100,7 +100,7 @@ describe("聊天附件 → narrative 摄入工具", () => {
     fs.writeFileSync(path.join(root, "tmp-upload-8821"), "正文", "utf-8");
     await ingest(
       { files: [{ path: "tmp-upload-8821", fileName: "原著节选.txt", fileType: "text/plain" }] },
-      { cwd: root, toolId: "t", caller: { kind: "test" } },
+      { projectRoot: root, toolId: "t", caller: { kind: "test" } },
     );
 
     expect(captured!.files[0]!.file_name).toBe("原著节选.txt");
@@ -109,12 +109,12 @@ describe("聊天附件 → narrative 摄入工具", () => {
 
   it("越出工程根目录的路径直接报错，且一个文件都不送", async () => {
     await expect(
-      ingest({ files: [{ path: "../../etc/passwd" }] }, { cwd: root, toolId: "t", caller: { kind: "test" } }),
+      ingest({ files: [{ path: "../../etc/passwd" }] }, { projectRoot: root, toolId: "t", caller: { kind: "test" } }),
     ).rejects.toThrow(/escapes the project root/);
     expect(captured).toBeNull();
   });
 
-  it("缺 cwd 时报错而不是猜一个根目录", async () => {
+  it("缺 projectRoot 时报错而不是猜一个根目录", async () => {
     await expect(
       ingest({ files: [{ path: "a.txt" }] }, { toolId: "t", caller: { kind: "test" } }),
     ).rejects.toThrow(/no project root/);

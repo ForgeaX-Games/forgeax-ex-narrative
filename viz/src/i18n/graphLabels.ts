@@ -50,6 +50,29 @@ export function resolveSeatLabel(seatId: string | undefined, fallback: string): 
   return hit === key ? fallback : hit;
 }
 
+/**
+ * 席位管线的内部名 → i18n key。
+ *
+ * announce 只下发管线的中文名（`叙事管线（任务）`），不下发一个稳定的 id——
+ * 容器 id 那一截是布局现拼的，跟后端的 `n` / `pl-film-game` 对不上。管线统共四条、
+ * 且是后端的受控常量，所以这里直接按名字查，跟 `tagOpt.genre.悬疑` 同一个路数。
+ */
+const PIPELINE_NAME_KEY: Record<string, string> = {
+  "叙事管线（任务）": "pipeline.name.quest",
+  "叙事管线（分镜）": "pipeline.name.storyboard",
+  "叙事管线（设定集）": "pipeline.name.codex",
+  "叙事管线（叙事卡）": "pipeline.name.card",
+};
+
+/** Localize a seat-pipeline sublabel; unknown pipelines keep the backend name. */
+export function resolvePipelineName(name: string | undefined): string | undefined {
+  if (!name || preferBackendName(name)) return name;
+  const key = PIPELINE_NAME_KEY[name];
+  if (!key) return name;
+  const hit = t(key);
+  return hit === key ? name : hit;
+}
+
 /** Localize a React Flow node label from its id + stored fallback (usually the backend name). */
 export function resolveGraphNodeLabel(nodeId: string, fallback: string): string {
   if (preferBackendName(fallback)) return fallback;

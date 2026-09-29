@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Trash2 } from "lucide-react";
 import { ReactFlowProvider } from "reactflow";
 import { useNarrativeStore } from "../../store/narrativeStore";
 import { startEntryPipelines, planPipelines, saveEntry } from "../../hooks/useNarrativeStream";
@@ -160,7 +159,6 @@ export function ComposerView() {
   const composerNodes = useNarrativeStore((s) => s.composerNodes);
   // 订阅 edges：锚点数量随连线变化，保证工具条提示实时刷新。
   useNarrativeStore((s) => s.composerEdges);
-  const clearComposer = useNarrativeStore((s) => s.clearComposer);
   const getAnchoredPipelines = useNarrativeStore((s) => s.getAnchoredPipelines);
   const storeStartNewRun = useNarrativeStore((s) => s.startNewRun);
   const setEntryPipelines = useNarrativeStore((s) => s.setEntryPipelines);
@@ -374,17 +372,18 @@ export function ComposerView() {
 
   return (
     <div className="composer-view">
-      {/* 空画布不摆工具条：设计稿 01 的空态只有水印。有节点了才需要"清空 + 提示"。 */}
+      {/* 空画布不摆提示条：设计稿 01 的空态只有水印。「清空画布」挪到底部居中工具条
+          跟视图/缩放键放一块（CenterOverlay.tsx）——顶栏留操作提示 + 三层信息架构
+          的第三层注释：节点数量、是否选中。单个节点更细的运行状态（未开始/运行中/
+          已完成/中断/失败）已经画在节点卡自己身上（ComposerFlowNode 的状态角标 +
+          进度环），这里不重复画第二份，只报"有多少、选没选"这层概览。 */}
       {composerNodes.length > 0 && (
         <div className="composer-view__toolbar">
-          <button
-            type="button"
-            className="fx-btn fx-btn--danger"
-            onClick={() => { clearComposer(); setSelectedId(null); }}
-          >
-            <Trash2 size={13} aria-hidden />
-            {t("composer.clear")}
-          </button>
+          {/* 只报"选没选"。节点数量归第四层那条注释（CenterNote），
+              在它下方 34px 再说一遍同一个数就是重复。 */}
+          <span className="composer-view__status">
+            {selectedId ? t("composer.status.selected") : t("composer.status.unselected")}
+          </span>
           <span className="composer-view__hint">
             {error
               ? error

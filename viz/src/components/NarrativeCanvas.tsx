@@ -50,28 +50,28 @@ class CanvasErrorBoundary extends React.Component<
         <div style={{
           display: "flex", alignItems: "flex-start", justifyContent: "flex-start",
           width: "100%", height: "100%",
-          background: "var(--dt-bg, #060a04)", color: "rgba(255,120,120,0.95)",
-          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12, padding: 24,
+          background: "var(--dt-bg)", color: "color-mix(in srgb, var(--color-status-error) 95%, transparent)",
+          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: "var(--text-caption)", padding: 24,
           flexDirection: "column", gap: 10, overflow: "auto",
         }}>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>{t("canvas.errorTitle")}</div>
-          <div style={{ color: "rgba(255,180,180,0.95)", fontSize: 12, fontWeight: 600 }}>
+          <div style={{ fontSize: "var(--text-ui)", fontWeight: 600 }}>{t("canvas.errorTitle")}</div>
+          <div style={{ color: "color-mix(in srgb, var(--color-status-error) 95%, transparent)", fontSize: "var(--text-caption)", fontWeight: 600 }}>
             {this.state.error.name}: {this.state.error.message}
           </div>
           {stack && (
             <details open style={{ width: "100%" }}>
-              <summary style={{ color: "rgba(180,255,200,0.7)", cursor: "pointer", fontSize: 11 }}>{t("canvas.jsStack")}</summary>
-              <pre style={{ fontSize: 10, color: "rgba(255,255,255,0.55)", whiteSpace: "pre-wrap",
-                background: "rgba(0,0,0,0.4)", padding: 8, borderRadius: 4, margin: "6px 0", maxHeight: 240, overflow: "auto" }}>
+              <summary style={{ color: "color-mix(in srgb, var(--color-status-success) 70%, transparent)", cursor: "pointer", fontSize: "var(--text-caption)" }}>{t("canvas.jsStack")}</summary>
+              <pre style={{ fontSize: "var(--text-caption)", color: "color-mix(in srgb, var(--color-text-primary) 55%, transparent)", whiteSpace: "pre-wrap",
+                background: "var(--color-background-inset)", padding: 8, borderRadius: 4, margin: "6px 0", maxHeight: 240, overflow: "auto" }}>
                 {stack}
               </pre>
             </details>
           )}
           {compStack && (
             <details open style={{ width: "100%" }}>
-              <summary style={{ color: "rgba(180,255,200,0.7)", cursor: "pointer", fontSize: 11 }}>{t("canvas.componentStack")}</summary>
-              <pre style={{ fontSize: 10, color: "rgba(255,255,255,0.55)", whiteSpace: "pre-wrap",
-                background: "rgba(0,0,0,0.4)", padding: 8, borderRadius: 4, margin: "6px 0", maxHeight: 240, overflow: "auto" }}>
+              <summary style={{ color: "color-mix(in srgb, var(--color-status-success) 70%, transparent)", cursor: "pointer", fontSize: "var(--text-caption)" }}>{t("canvas.componentStack")}</summary>
+              <pre style={{ fontSize: "var(--text-caption)", color: "color-mix(in srgb, var(--color-text-primary) 55%, transparent)", whiteSpace: "pre-wrap",
+                background: "var(--color-background-inset)", padding: 8, borderRadius: 4, margin: "6px 0", maxHeight: 240, overflow: "auto" }}>
                 {compStack}
               </pre>
             </details>
@@ -79,16 +79,16 @@ class CanvasErrorBoundary extends React.Component<
           <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
             <button
               style={{ padding: "4px 16px", cursor: "pointer",
-                background: "transparent", border: "1px solid rgba(77,255,160,0.3)",
-                color: "rgba(77,255,160,0.85)", borderRadius: 2, fontSize: 11 }}
+                background: "transparent", border: "1px solid color-mix(in srgb, var(--color-status-success) 30%, transparent)",
+                color: "color-mix(in srgb, var(--color-status-success) 85%, transparent)", borderRadius: 2, fontSize: "var(--text-caption)" }}
               onClick={() => this.setState({ error: null, info: null })}
             >
               {t("canvas.retry")}
             </button>
             <button
               style={{ padding: "4px 16px", cursor: "pointer",
-                background: "transparent", border: "1px solid rgba(150,200,255,0.3)",
-                color: "rgba(150,200,255,0.85)", borderRadius: 2, fontSize: 11 }}
+                background: "transparent", border: "1px solid color-mix(in srgb, var(--color-status-info) 30%, transparent)",
+                color: "color-mix(in srgb, var(--color-status-info) 85%, transparent)", borderRadius: 2, fontSize: "var(--text-caption)" }}
               onClick={() => {
                 const text = `${this.state.error?.name}: ${this.state.error?.message}\n\n--- JS Stack ---\n${stack}\n\n--- Component Stack ---\n${compStack}`;
                 navigator.clipboard?.writeText(text).catch(() => {});
@@ -435,11 +435,11 @@ function NarrativeCanvasInner() {
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "center",
         width: "100%", height: "100%",
-        background: "var(--dt-bg, #060a04)", color: "var(--dt-text-sec, rgba(77,255,160,0.3))",
-        fontFamily: "var(--font-mono, monospace)", fontSize: 12,
+        background: "var(--dt-bg)", color: "var(--dt-text-sec)",
+        fontFamily: "var(--font-mono, monospace)", fontSize: "var(--text-caption)",
         flexDirection: "column", gap: 6,
       }}>
-        <span style={{ fontSize: 24, opacity: 0.3 }}>◈</span>
+        <span style={{ fontSize: "var(--text-display)", opacity: 0.3 }}>◈</span>
         <span>{t("canvas.empty")}</span>
       </div>
     );
@@ -470,25 +470,25 @@ function NarrativeCanvasInner() {
           variant={BackgroundVariant.Dots}
           gap={22}
           size={1.1}
-          color="rgba(77,255,160,0.04)"
+          color="color-mix(in srgb, var(--color-status-success) 4%, transparent)"
         />
         {/* 缩放/复位由创作空间浮层的画布控件统一提供，这里不再摆第二套。 */}
         <MiniMap
           position="top-right"
           nodeColor={(n) => {
-            if (n.type === "storyChild") return "rgba(77,255,160,0.30)";
+            if (n.type === "storyChild") return "color-mix(in srgb, var(--color-status-success) 30%, transparent)";
             let lookupId = n.id;
             const resolved = resolveStepId(n.id, steps);
             if (resolved) lookupId = resolved;
             const step = steps.find((s) => s.id === lookupId);
-            if (!step) return "rgba(77,255,160,0.08)";
-            if (step.status === "completed") return "rgba(77,255,160,0.70)";
-            if (step.status === "running") return "rgba(255,107,53,0.70)";
-            if (step.status === "failed") return "rgba(255,80,80,0.60)";
-            return "rgba(77,255,160,0.10)";
+            if (!step) return "color-mix(in srgb, var(--color-status-success) 8%, transparent)";
+            if (step.status === "completed") return "color-mix(in srgb, var(--color-status-success) 70%, transparent)";
+            if (step.status === "running") return "color-mix(in srgb, var(--color-status-warning) 70%, transparent)";
+            if (step.status === "failed") return "color-mix(in srgb, var(--color-status-error) 60%, transparent)";
+            return "color-mix(in srgb, var(--color-status-success) 10%, transparent)";
           }}
-          maskColor="rgba(4,8,2,0.80)"
-          style={{ background: "rgba(6,10,4,0.95)" }}
+          maskColor="color-mix(in srgb, var(--color-background-inset) 80%, transparent)"
+          style={{ background: "color-mix(in srgb, var(--color-background-inset) 95%, transparent)" }}
         />
       </ReactFlow>
     </div>
@@ -536,18 +536,18 @@ function LayoutErrorBanner() {
   return (
     <div style={{
       position: "absolute", top: 8, left: 8, right: 8, zIndex: 1000,
-      background: "rgba(60,0,0,0.92)", border: "1px solid rgba(255,80,80,0.5)",
-      borderRadius: 6, padding: "10px 14px", color: "rgba(255,200,200,0.95)",
-      fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12,
+      background: "color-mix(in srgb, var(--color-background-inset) 92%, transparent)", border: "1px solid color-mix(in srgb, var(--color-status-error) 50%, transparent)",
+      borderRadius: 6, padding: "10px 14px", color: "color-mix(in srgb, var(--color-status-error) 95%, transparent)",
+      fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: "var(--text-caption)",
       maxHeight: "60%", overflow: "auto",
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-        <span style={{ fontSize: 14, fontWeight: 700 }}>⚠ {t("canvas.layoutError")}</span>
+        <span style={{ fontSize: "var(--text-ui)", fontWeight: 700 }}>⚠ {t("canvas.layoutError")}</span>
         <button
           style={{
             marginLeft: "auto", padding: "2px 10px", cursor: "pointer",
-            background: "transparent", border: "1px solid rgba(150,200,255,0.4)",
-            color: "rgba(180,220,255,0.95)", borderRadius: 3, fontSize: 11,
+            background: "transparent", border: "1px solid color-mix(in srgb, var(--color-status-info) 40%, transparent)",
+            color: "color-mix(in srgb, var(--color-status-info) 95%, transparent)", borderRadius: 3, fontSize: "var(--text-caption)",
           }}
           onClick={() => navigator.clipboard?.writeText(dump).catch(() => {})}
         >
@@ -556,8 +556,8 @@ function LayoutErrorBanner() {
         <button
           style={{
             padding: "2px 10px", cursor: "pointer",
-            background: "transparent", border: "1px solid rgba(180,255,200,0.3)",
-            color: "rgba(180,255,200,0.85)", borderRadius: 3, fontSize: 11,
+            background: "transparent", border: "1px solid color-mix(in srgb, var(--color-status-success) 30%, transparent)",
+            color: "color-mix(in srgb, var(--color-status-success) 85%, transparent)", borderRadius: 3, fontSize: "var(--text-caption)",
           }}
           onClick={() => {
             const w = window as unknown as { __narrativeLayoutError__?: LayoutErrPayload };
@@ -568,20 +568,20 @@ function LayoutErrorBanner() {
           {t("canvas.close")}
         </button>
       </div>
-      <div style={{ color: "rgba(255,180,180,0.95)", fontWeight: 600, marginBottom: 4 }}>{err.message}</div>
+      <div style={{ color: "color-mix(in srgb, var(--color-status-error) 95%, transparent)", fontWeight: 600, marginBottom: 4 }}>{err.message}</div>
       {err.stack && (
         <details open>
-          <summary style={{ color: "rgba(180,220,255,0.7)", cursor: "pointer", fontSize: 11 }}>{t("canvas.jsStack")}</summary>
-          <pre style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", whiteSpace: "pre-wrap",
-            background: "rgba(0,0,0,0.4)", padding: 6, borderRadius: 4, margin: "4px 0", maxHeight: 180, overflow: "auto" }}>
+          <summary style={{ color: "color-mix(in srgb, var(--color-status-info) 70%, transparent)", cursor: "pointer", fontSize: "var(--text-caption)" }}>{t("canvas.jsStack")}</summary>
+          <pre style={{ fontSize: "var(--text-caption)", color: "color-mix(in srgb, var(--color-text-primary) 60%, transparent)", whiteSpace: "pre-wrap",
+            background: "var(--color-background-inset)", padding: 6, borderRadius: 4, margin: "4px 0", maxHeight: 180, overflow: "auto" }}>
             {err.stack}
           </pre>
         </details>
       )}
       <details>
-        <summary style={{ color: "rgba(180,220,255,0.7)", cursor: "pointer", fontSize: 11 }}>{t("canvas.stepsResult")}</summary>
-        <pre style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", whiteSpace: "pre-wrap",
-          background: "rgba(0,0,0,0.4)", padding: 6, borderRadius: 4, margin: "4px 0", maxHeight: 180, overflow: "auto" }}>
+        <summary style={{ color: "color-mix(in srgb, var(--color-status-info) 70%, transparent)", cursor: "pointer", fontSize: "var(--text-caption)" }}>{t("canvas.stepsResult")}</summary>
+        <pre style={{ fontSize: "var(--text-caption)", color: "color-mix(in srgb, var(--color-text-primary) 60%, transparent)", whiteSpace: "pre-wrap",
+          background: "var(--color-background-inset)", padding: 6, borderRadius: 4, margin: "4px 0", maxHeight: 180, overflow: "auto" }}>
           {JSON.stringify({ steps: err.steps, resultKeys: err.resultKeys }, null, 2)}
         </pre>
       </details>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlignLeft, Maximize, Minus, Network, Plus } from "lucide-react";
+import { AlignLeft, Maximize, Minus, Network, Plus, Trash2 } from "lucide-react";
 import { RunActionBar } from "./RunActionBar";
 import { useNarrativeStore } from "../../store/narrativeStore";
 import {
@@ -13,16 +13,21 @@ import { useT } from "../../i18n";
  * 创作空间的浮层。
  *
  * 主体永远是整片画布，这一层只压在它上面：底部一条居中的纯图标工具条——
- * 开始/取消生成、文本↔节点切换、放大缩小复原，六个同形图标一排。
+ * 开始/取消生成、文本↔节点切换、放大缩小复原、清空画布，同形图标一排。
  *
  * 中央不再浮任何入口卡：需求写在画布的输入节点里，或者直接跟外侧对话栏说。
  * 空态该看到的只有水印，一张挡在中间的卡片只会把画布这个主角遮住。
+ *
+ * 「清空画布」原来单开一条顶栏（画布上方），现在并进这条底部工具条：
+ * 用户的手已经在这一排上找生成/视图/缩放键，删除动作不该单独占一整行去够。
  */
 export function CenterOverlay() {
   const t = useT();
   const viewMode = useNarrativeStore((s) => s.viewMode);
   const setViewMode = useNarrativeStore((s) => s.setViewMode);
   const runtimeError = useNarrativeStore((s) => s.runtimeError);
+  const composerNodes = useNarrativeStore((s) => s.composerNodes);
+  const clearComposer = useNarrativeStore((s) => s.clearComposer);
   const [canvas, setCanvas] = useState<CanvasControls | null>(getCanvasControls);
 
   useEffect(() => subscribeCanvasControls(setCanvas), []);
@@ -82,6 +87,20 @@ export function CenterOverlay() {
             aria-label={t("canvas.reset")}
           >
             <Maximize size={14} strokeWidth={2} aria-hidden />
+          </button>
+        </div>
+
+        {/* 清空画布：只在有节点时才有意义，空画布上摆一枚永远灰着的删除键没道理。 */}
+        <div className="cw-canvasctl" role="group" aria-label={t("composer.clear")}>
+          <button
+            type="button"
+            className="cw-canvasctl__btn is-danger"
+            onClick={() => clearComposer()}
+            disabled={composerNodes.length === 0}
+            title={t("composer.clear")}
+            aria-label={t("composer.clear")}
+          >
+            <Trash2 size={14} strokeWidth={2} aria-hidden />
           </button>
         </div>
       </div>

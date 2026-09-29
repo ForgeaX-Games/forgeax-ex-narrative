@@ -18,10 +18,13 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { DistilledProfile, TeamKind, TeamRecord } from "./types.js";
 import { bookUidFor } from "./types.js";
+import { resolveNarrativeRoot } from "../runtime/artifact-root.js";
 
 const TEAMS_DIRNAME = path.join("input", "custom_teams");
 
-function teamsDir(cwd = process.cwd()): string {
+// 与 input/ 同级，挂在同一个双模式产物根下（src/runtime/artifact-root.ts）：
+// 插件模式随叙事一起落进平台项目目录。
+function teamsDir(cwd = resolveNarrativeRoot()): string {
   return path.join(cwd, TEAMS_DIRNAME);
 }
 
