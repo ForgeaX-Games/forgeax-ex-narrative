@@ -65,9 +65,15 @@ const SLOT_TO_AXIS: Readonly<Record<(typeof STRATEGY_SLOTS)[number], StrategyAxi
 };
 
 /**
- * 品类优先取配置注入的那一份（选专家时就定了），检测结果只作旧条目/自动路由的兜底。
+ * 本次运行是什么品类 —— 全仓唯一的判定。
+ *
+ * 优先取配置注入的那一份（选专家时就定了），检测结果只作旧条目与自动路由的兜底。
+ *
+ * 导出是因为 `providers.ts` 曾有一份同名实现，差别只在**不读** `narrative_axes.genre`。
+ * 于是同一次运行里两处对"这是什么品类"的答案可以不同：用户显式选了品类，策略卡按选的那个
+ * 取，品类技能包却按需求分析猜的那个取 —— 两份内容都进同一份提示词，讲的是两个品类。
  */
-function resolveGenreCode(ctx: NarrativeContext): string | null {
+export function resolveGenreCode(ctx: NarrativeContext): string | null {
   return (
     ctx.narrative_axes?.genre ??
     ctx.demand_analysis?.genre_code ??

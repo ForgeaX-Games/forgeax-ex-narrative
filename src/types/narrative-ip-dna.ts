@@ -22,6 +22,8 @@
 // 0. 公共基础类型
 // ─────────────────────────────────────────────────────────────────
 
+import type { StoryStructureCode } from "../knowledge/narrative-axes/story-structures.js";
+
 /**
  * Schema 版本（§14.2 D5）。IP DNA 顶层携带，预留迁移器、向后兼容。
  */
@@ -231,12 +233,47 @@ export interface NarrativeTemplate {
 /** 节点结构维度（由入度/出度推导、可多重）。 */
 export type PlotNodeType = "start" | "end" | "pivot" | "merge" | "normal";
 
-/** 边事件（由两端节点度数推导）。 */
-export type PlotEdgeEvent = "continue" | "merge" | `choose.${string}`;
+/**
+ * 边事件 —— 与生成侧的 `NodeEdge.kind` 同一套词，全仓只有这三值。
+ *
+ * `choose` 曾写成模板字面量 `choose.${string}`，后缀放选项标签（`choose.A`）。那让
+ * 同一个标签有两处住所：后缀与同一条边上的 `label` 字段。代码从来只判前缀、不读后缀，
+ * 于是后缀是一份没人读却可能与 label 说不一致的副本。标签归 label。
+ */
+export type PlotEdgeEvent = "continue" | "merge" | "choose";
 
-/** 结局二维（§4.3）。 */
-export type EndingType = "good" | "neutral" | "bad" | "open";
+/**
+ * 结局的情感落点（§4.3 结局二维的第一维，第二维是 `EndingPosition`）。
+ *
+ * 三值，全仓唯一一套：结构席的 `EndingSpec.kind` 与质检侧的令牌归一都指向这里。
+ * 曾经并行的另两套是 `H | B | O` 与一张 GOOD/HE/GE/TE/TRUE/BAD/BE/NE 的别名网 ——
+ * 三套各自能自洽，合起来就无法回答"这个结局到底算哪一档"。
+ *
+ * 归入规则（与 `endingKind` 契约一致）：
+ *   - 开放结局 → `neutral`。它不是第四档，是"没有明确落点"这件事本身。
+ *   - TrueEnd / 真结局 → `good`。
+ *   - 反转与隐藏结局按其**情感落点**归档，不另立一档：隐藏说的是可达性
+ *     （要满足条件才走到），与好坏是两个维度，混进来会让一个隐藏的悲剧无处可去。
+ */
+export type EndingType = "good" | "bad" | "neutral";
 export type EndingPosition = "early" | "mid" | "final";
+
+/**
+ * 把任何来源的结局词汇归一成规范三值 —— 全仓唯一的归一点。
+ *
+ * 需要它是因为写入侧不受类型约束：`endingType` 由提取阶段的模型产出，而存量 plot_tree
+ * 里还留着 `open`（它曾是 `EndingType` 的第四个值）与 TAPD 稿的 `true`。不归一的话旧值
+ * 会一路穿透到下游，在那里既匹配不上三档、也不报错。
+ *
+ * 认不出来就归 `neutral`，不抛错也不猜：落点要读懂剧情才知道，而这里只看到一个词。
+ * 记成"没有明确落点"是诚实的；猜成好或坏会让下游按一个无出处的判断去写正文。
+ */
+export function toEndingType(raw: unknown): EndingType {
+  const s = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  if (s === "good" || s === "true") return "good"; // TrueEnd 归 good
+  if (s === "bad") return "bad";
+  return "neutral"; // neutral / open / 认不出来的
+}
 
 /** 剧情树节点（最小叙事单元层）。 */
 export interface PlotTreeNode {
@@ -245,7 +282,14 @@ export interface PlotTreeNode {
   /** 所属场号（纯数字）。 */
   sceneId: string;
   title?: string;
-  /** 节点类型（可多重，如 ["merge","pivot"]）。 */
+  /**
+   * 节点类型（可多重，如 ["merge","pivot"]）—— **派生量的读数，不是真值源**。
+   *
+   * 权威在 `prevNodes` / `nextNodes`：是起点、分叉、汇点还是结局，完整地写在连接里。
+   * 本字段由 `normalizePlotTree` 按连接算出来写在这里，是给人看的方便读数；代码要判断
+   * 就自己算（`inferPlotNodeTypes`），不要据它判断 —— 一旦有读取者信它，它就又成了
+   * 第二个真值源，而两个真值源迟早说不一致。
+   */
   nodeTypes: PlotNodeType[];
   /** 上游节点 id（入度 = prevNodes.length；root 为空）。 */
   prevNodes: string[];
@@ -287,8 +331,11 @@ export interface PlotTreeTopology {
   mergeCount: number;
   /** 各类结局数量统计。 */
   endingCountsByType?: Partial<Record<EndingType, number>>;
-  /** 框架形态（对齐 NarrativeContext.GlobalControlParams.framework_type）。 */
-  shape?: "linear" | "dual_climax" | "multi_thread" | "nested" | "spiral";
+  /**
+   * 原作的叙事结构形态，取生成侧同一套 12 码（`StoryStructureCode`）。
+   * 同一套语汇才能让 IP 提炼的结论直接参与改编侧的结构投票。
+   */
+  shape?: StoryStructureCode;
 }
 
 export interface PlotTree {
@@ -526,6 +573,26 @@ export interface AdaptationDimensions {
 }
 
 /**
+ * 内容忠实度 —— 原作在这次改编里算什么。
+ *
+ * - `faithful`  原作是事实与结构的主基准：主要人物、核心关系、主线、关键转折与命运
+ *               完整继承，结构不改。
+ * - `balanced`  **缺省**。保留核心前提、主要角色关系、核心冲突与关键转折；允许重排
+ *               节奏、合并次要人物或情节、调整支线与结局实现。
+ * - `bold`      原作只作灵感与素材库：人物功能、命名、时空、主线、转折、分支、结局
+ *               都可以重构。
+ * - `creative`  不评价原作还原度，以策划案与大纲自由创作。
+ *
+ * **它是文本忠实度的唯一判定源。** 素材成熟度不参与：原作结构完整、有现成的分叉，
+ * 都不构成"应当照搬"的理由 —— 照搬与否是用户的选择，不是素材的属性。品类同样不参与：
+ * jrpg 与影游的差别在节点怎么连（那是叙事结构轴的事），不在原作能不能改。
+ */
+export type ContentFidelity = "faithful" | "balanced" | "bold" | "creative";
+
+/** 未选时的档位。原作是参照而非蓝本，这是改编的常态。 */
+export const DEFAULT_CONTENT_FIDELITY: ContentFidelity = "balanced";
+
+/**
  * 改编指令（adaptation_directive，§4.4）——IP DNA 上的结构化指令。
  * 由"改编范围 + 游戏单元规划 + 改编维度"构成（详见 §5.1 三步确认流程）。
  * 叙事算子不在改编指令内（§3.3）——算子随生成注入，不作为改编 target。
@@ -540,10 +607,14 @@ export interface AdaptationDirective {
   dimensions: AdaptationDimensions;
   /**
    * 作者自定义改编补充说明（§5.1「自定义补充」自由文本，可选）。
-   * 承载作者对所选范围"想怎么改"的意图：下游据此分析改哪些维度并定点替换；
-   * 为空＝忠实把原 IP 转化为目标品类叙事（不做额外维度改写）。
+   * 承载作者对所选范围"想怎么改"的意图：下游据此分析改哪些维度并定点替换。
+   *
+   * 与 `content_fidelity` 是同一个问题的两种答法：一个说得出档位，一个只说得出话。
+   * 为空不代表忠实 —— 改多改少看档位。
    */
   adaptation_notes?: string;
+  /** 原作在这次改编里算什么；未填按 `DEFAULT_CONTENT_FIDELITY`。 */
+  content_fidelity?: ContentFidelity;
 }
 
 // ─────────────────────────────────────────────────────────────────

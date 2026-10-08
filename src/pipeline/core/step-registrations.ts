@@ -59,16 +59,15 @@ import {
   structureValidationL2,
   structureValidationL3,
 } from "../steps/structure-validation.js";
+import { stateLedger } from "../steps/state-ledger-step.js";
 import { structureCheck } from "../steps/structure-check.js";
 import { contentCheck, CONTENT_CHECK_COMPOSER } from "../steps/content-check.js";
 import {
   deaiPolish,
   plotRefine,
-  plotPolish,
   playabilityAdapt,
   DEAI_COMPOSER,
   PLOT_REFINE_COMPOSER,
-  PLOT_POLISH_COMPOSER,
   PLAYABILITY_COMPOSER,
 } from "../steps/polish-seats.js";
 
@@ -266,7 +265,7 @@ registerStep({
 });
 
 /**
- * 场景列表（2.3.6）——前向规划。
+ * 场景列表（2.5.7）——前向规划。
  *
  * `dependsOn` 只留 worldview：旧 `scene_generation` 曾声明依赖 story_framework /
  * outline_batch / detailed_outline / plot_generation，即依赖自己的**下游**，那是
@@ -287,7 +286,7 @@ registerStep({
 });
 
 /**
- * 场景取证（内容检查席 2.3.15 的子步，不是独立席位）。
+ * 场景取证（内容检查席 2.5.16 的子步，不是独立席位）。
  *
  * 硬输入取情节正文：取证的对象是"剧情里实际出现过什么"，没有剧情就无据可取。
  * 前向清单（scene_map）是软输入——没有清单时只出实测名单，不报漏项，否则全是假阳性。
@@ -333,7 +332,7 @@ registerStep({
 });
 
 /**
- * 百科娘（2.3.20）。
+ * 百科娘（2.5.1）。
  *
  * dependsOn 为空是刻意的：它检索的是**外部**资料，不吃管线上游产物，
  * 因此可以在任何环节之前独立跑，产出供其它席位当外部事实引用
@@ -483,7 +482,7 @@ registerStep({
 });
 
 // ════════════════════════════════════════════════════════
-// F. 质检席位（2.3.14–2.3.19）
+// F. 质检席位（2.5.15–2.5.20）
 //
 // 同一份实现按管线注册两个描述符：席位是一个，接线各是各的。
 // 上面的 structure_validation_* 是生成步内部的修复钩子，与本席位并存——
@@ -495,13 +494,28 @@ registerStep({
 // ════════════════════════════════════════════════════════
 
 /**
- * 结构检查（2.3.14）。runPolicy: requires-upstream——没有剧情树就没有可检查的结构，
+ * 结构检查（2.5.15）。runPolicy: requires-upstream——没有剧情树就没有可检查的结构，
  * 空跑出一份"没发现问题"的报告比拦住更坏（用户会以为审过了）。
  *
  * 闸门取 L1 的 `outlines_generated` 而不是 `dependsOn` 指的 L2：结构席内部是
  * L1→L2 两步，只跑到 L1 的用户理应能先审一遍分支与聚合，有哪层查哪层这条宽容
  * 语义保留在实现里，闸门只拦"连一层都没有"。
  */
+/**
+ * 状态账本（2.5.10 的第二个实现）。把 L3 每个节点声明的状态变更折成一本账，下游想知道
+ * "走到某节点时世界什么样"就不必重读全树。requiredInputs 指情节产物：账本是它的派生物，
+ * 没有树就没有账可记。
+ */
+registerStep({
+  id: "state_ledger",
+  name: "状态账本",
+  fn: stateLedger,
+  extractOutputKey: "world_state_ledger",
+  dependsOn: ["plot_generation"],
+  requiredInputs: ["plots_generated"],
+  outputFields: ["world_state_ledger"],
+});
+
 registerStep({
   id: "structure_check",
   name: "结构检查",
@@ -513,7 +527,7 @@ registerStep({
 });
 
 /**
- * 内容检查（2.3.15）。runPolicy: requires-upstream——四类受检对象里故事内容是主体，
+ * 内容检查（2.5.16）。runPolicy: requires-upstream——四类受检对象里故事内容是主体，
  * 缺了情节正文，剩下三类（角色 / 道具 / 场景）也失去比对基准。
  */
 registerStep({
@@ -530,7 +544,7 @@ registerStep({
 });
 
 // ════════════════════════════════════════════════════════
-// G. 打磨席位（2.3.16–2.3.19）
+// G. 打磨席位（2.5.17–2.5.20）
 //
 // 四席共用 polish-family 的机制，各自只有提示词不同（见 polish-seats.ts）。
 // 产物原位写回基准字段（席位表 branch.baseField）：这四席是「优化已生成剧本」的
@@ -538,7 +552,7 @@ registerStep({
 // （见 step-files 的 INPLACE_TRANSFORM_STEPS），"用哪一版"靠版本号而非字段分叉。
 //
 // 打磨的对象是"已经生成的东西"，所以前三席一律 requires-upstream，闸门取各自的
-// 基准字段。玩法适配（2.3.19）已改 planned，不参与这条口径。
+// 基准字段。玩法适配（2.5.20）已改 planned，不参与这条口径。
 // ════════════════════════════════════════════════════════
 
 registerStep({
@@ -567,19 +581,6 @@ registerStep({
   responseFormat: "json",
 });
 
-registerStep({
-  id: "plot_polish",
-  name: "情节润色",
-  fn: plotPolish,
-  composer: PLOT_POLISH_COMPOSER,
-  extractOutputKey: "plots_generated",
-  dependsOn: ["plot_generation"],
-  requiredInputs: ["plots_generated"],
-  outputFields: ["plots_generated"],
-  temperature: 0.8,
-  responseFormat: "json",
-});
-
 // 玩法适配打磨的是细纲（剧情树那一层的分支与选项），所以 dependsOn 指细纲而非情节。
 //
 // 席位已改 planned（暂不接线，见 assistant-seats.ts 的 playability）：实现仍注册着
@@ -592,7 +593,9 @@ registerStep({
   composer: PLAYABILITY_COMPOSER,
   extractOutputKey: "detailed_outlines_generated",
   dependsOn: ["detailed_outline"],
-  requiredInputs: [],
+  // 空数组是 planned 时期的遗留：planned 席不谈起跑，所以闸门不必声明。转 active 后
+  // 必须写实，否则单跑它会拿着一份空细纲去改选项，而不是回一句"需先运行结构助手"。
+  requiredInputs: ["detailed_outlines_generated"],
   outputFields: ["detailed_outlines_generated"],
   temperature: 0.7,
   responseFormat: "json",

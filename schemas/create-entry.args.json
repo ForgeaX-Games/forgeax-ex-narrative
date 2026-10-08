@@ -14,20 +14,19 @@
     "inputType": {
       "type": "string",
       "enum": [
-        "text",
-        "tags",
-        "works"
+        "authored",
+        "adapted"
       ],
-      "description": "How the requirement was given: free text, tag selection, or uploaded works. Recorded so the task panel can show what the author actually submitted."
+      "description": "Where the requirement comes from: 'authored' (the user describes it -- free text and/or tag selections, which coexist) or 'adapted' (an existing work was uploaded). The retired values 'text', 'tags' and 'works' are still accepted and folded on read."
     },
     "userInput": {
       "type": "string",
-      "description": "The requirement text for this entry."
+      "description": "The requirement text for this entry. Coexists with tags -- both may be given."
     },
     "tags": {
       "type": "object",
       "additionalProperties": true,
-      "description": "Raw tag selections when inputType is 'tags': { selections, customTexts }. Not used for routing, recorded for restore."
+      "description": "Raw tag selections: { selections, customTexts }. Coexists with userInput -- both may be given. Not used for routing, recorded for restore."
     },
     "routeGroup": {
       "type": "string",

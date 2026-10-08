@@ -36,8 +36,13 @@ export interface ResolvedStructure {
  * 规则：每个轴的 structureHints 按位次加权投票（首选权重最高），并列时按
  * STRUCTURE_VOTING_AXES 的轴优先级裁决 —— 品类 > 类型 > 题材。
  *
- * 现阶段类型轴与题材轴的 structureHints 全为空（表格未定稿），所以结论实际由品类单轴决定；
- * 一旦你把类型/题材的结构倾向填进 story-types.ts / story-themes.ts，这里无需改动即可生效。
+ * 三个轴现在都有数据（品类 genre-structure-hints.ts、类型 story-types.ts、
+ * 题材 story-themes.ts），所以结论是真的三轴综合而来，不再是品类单轴独裁。
+ * 结论不是一个固定模型的查表结果：换任一轴都可能换出另一个结构，
+ * 这正是「故事结构由多方维度比较和深化而成」在代码里的样子。
+ *
+ * 结论怎么真正影响树的形状，见 story-structures.ts 的 topology 参数
+ * 与 pipeline/runtime/layer-threshold-config.ts 的结构调制。
  */
 export function resolveNarrativeStructure(input: ResolveStructureInput): ResolvedStructure {
   const byAxis = {

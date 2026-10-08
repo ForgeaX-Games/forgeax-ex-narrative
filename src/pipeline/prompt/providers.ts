@@ -25,7 +25,8 @@ import {
   buildItemDigest,
   buildStoryArcDigest,
 } from "../steps/context-helpers.js";
-import { STRATEGY_PROVIDERS } from "./strategy-slots.js";
+import { STRATEGY_PROVIDERS, resolveGenreCode } from "./strategy-slots.js";
+import { narrativeTagsProvider } from "./tag-slots.js";
 
 export interface ProviderInput {
   ctx: NarrativeContext;
@@ -40,10 +41,6 @@ export interface FragmentProvider {
   name: string;
   /** 产出该插槽内容（空串=不填充）。 */
   provide(input: ProviderInput): string;
-}
-
-function resolveGenreCode(ctx: NarrativeContext): string | null {
-  return ctx.demand_analysis?.genre_code ?? ctx.tier_detection?.genre_code ?? null;
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -105,6 +102,8 @@ export const DEFAULT_PROVIDERS: readonly FragmentProvider[] = [
   relationsProvider,
   ledgerProvider,
   ...STRATEGY_PROVIDERS,
+  // 标签的创作坐标进第⑦段上下文输入（见 tag-slots.ts 对两路去向的说明）。
+  narrativeTagsProvider,
   // genreStyleProvider 与 STRATEGY_PROVIDERS 里的 strategyGenreProvider 同插槽
   // （strategy_genre），buildSlotMap 按 provider 顺序拼接、不覆盖——两者本就是不同
   // 来源的内容（策略卡 vs 技能包），拼接而非互斥是设计本身，不是遗留冲突。

@@ -35,7 +35,7 @@ import {
   type RepairOutcome,
 } from "../pipeline/qa/repair.js";
 import { buildStructureCheckReport } from "../pipeline/steps/structure-check.js";
-import { buildRunManifest, buildEntryManifests } from "../pipeline/runtime/run-manifest-builder.js";
+import { buildRunManifest, buildEntryManifests, buildStructureRationale } from "../pipeline/runtime/run-manifest-builder.js";
 import {
   checkpointAgentsFrom,
   completedStepsFromAgents,
@@ -45,7 +45,7 @@ import {
   syncManifestAgents,
   type CheckpointAgentSlot,
 } from "../pipeline/runtime/run-manifest-runtime.js";
-import { splitCompositionByStartNodes, type RunManifest } from "../types/run-manifest.js";
+import { splitCompositionByStartNodes, type RunManifest, type RunManifestConfig } from "../types/run-manifest.js";
 import type { AgentLifecycle } from "../pipeline/core/agent-contract.js";
 import { runAgent, assertAgentRunnable, MissingInputsError } from "../pipeline/core/run-agent.js";
 import { getNarrativeAgent } from "../pipeline/core/agent-registry.js";
@@ -58,13 +58,15 @@ import { buildKnowledgePromptSection, buildNodeTreeSummary, preClassifyChange, P
 import type { NarrativeContext, PipelineProgress, TierId, ModeId, PlotsGenerated, JrpgScript, SceneMap, QuestGraph, StepMeta, StepModification, StoryFramework, OutlinesGenerated, DetailedOutlinesGenerated, UploadedScript, NarrativeAxesSelection, AnnounceStepGroup } from "../types/index.js";
 import {
   resolveNarrativeStructure,
+  resolveUserAxes,
   STORY_TYPES,
   STORY_THEMES,
   STORY_STRUCTURES,
 } from "../knowledge/narrative-axes/index.js";
+import type { NarrativeTagSelection } from "../knowledge/narrative-axes/index.js";
 import { detectScriptFormat, describeScriptFormat } from "../utils/script-format-detector.js";
 import { packageVersion } from "../utils/package-version.js";
-import { runIpDnaPipeline, runIngest, runExtractAndGenerate, loadExtractSourceByRun, resolveIpDnaRuntimeAdapters, loadHierarchyIndexByRun, loadManifestByRun, listInputRunKeys, runArtifactRoots, RUN_ARTIFACT_GROUP_LABELS, analyzeRewriteImpact, createJob, updateJob, getJob, listJobs, cancelJob, formatTimestamp as formatIpDnaTimestamp, buildAdaptationDirective, planDecomposition, applyDecompositionClosure, assessVolume, collectLeafIds, saveHierarchyIndexOnly, saveAdaptationConfirmation, loadAdaptationConfirmation, guessLevelsFromHierarchy, type IncomingFile, type IpDnaProgress, type ExtractSource, type NarrativeIpDna } from "../ip-dna/index.js";
+import { runIpDnaPipeline, runIngest, runExtractAndGenerate, loadExtractSourceByRun, resolveIpDnaRuntimeAdapters, loadHierarchyIndexByRun, loadManifestByRun, listInputRunKeys, runArtifactRoots, RUN_ARTIFACT_GROUP_LABELS, analyzeRewriteImpact, createJob, updateJob, getJob, listJobs, cancelJob, formatTimestamp as formatIpDnaTimestamp, buildAdaptationDirective, parseContentFidelity, planDecomposition, applyDecompositionClosure, assessVolume, collectLeafIds, saveHierarchyIndexOnly, saveAdaptationConfirmation, loadAdaptationConfirmation, guessLevelsFromHierarchy, type IncomingFile, type IpDnaProgress, type ExtractSource, type NarrativeIpDna } from "../ip-dna/index.js";
 // Phase C6: env reads are funnelled through plugin-env so the literal
 // `process.env.*_API_KEY` substring stays out of plugin source files. See
 // utils/plugin-env.ts header for the full rationale (this Express server is
@@ -858,6 +860,8 @@ interface RunState {
   narrativeAxes?: NarrativeAxesSelection;
   /** 结构结论的来源：用户显式指定 / 三轴投票 / 三轴皆空。写进 manifest 供前端解释"为何是这个结构"。 */
   structureSource?: "explicit" | "vote" | "none";
+  /** 结构推导的全过程（候选排序 / 各轴倾向 / 标签兜底命中），落 manifest 供 UI 展示。 */
+  structureRationale?: RunManifestConfig["structureRationale"];
   model?: string;
   completedSteps?: string[];
   stepMeta?: Record<string, StepMeta>;
@@ -977,6 +981,7 @@ function initRunManifest(
       storyTheme: state.narrativeAxes?.storyTheme ?? null,
       narrativeStructure: state.narrativeAxes?.structure ?? null,
       structureSource: state.structureSource ?? "none",
+      structureRationale: state.structureRationale,
       complexity: state.complexity,
       routeGroup: state.routeGroup,
       locale: opts.locale,
@@ -1464,6 +1469,8 @@ app.post("/api/narrative/start", async (req, res) => {
     story_type,
     story_theme,
     narrative_structure,
+    /** 标签选择；类型/题材为空时由它兜底推导两轴。不传则从 `_entry.json` 读已落盘的那份。 */
+    tags,
     // M-E 下闸（叙事工坊平台接入对齐）：`use_legacy_pipeline` / `use_blueprint` 两个
     // 开关曾经能从这个 HTTP 入参直接触达 `buildAutoSteps` 那条 @deprecated 冷路径
     // 与 `runWithBlueprint` 平行执行路径，界面从不传，但外部调用者显式传 true 即可
@@ -1517,6 +1524,7 @@ app.post("/api/narrative/start", async (req, res) => {
     story_type?: string;
     story_theme?: string;
     narrative_structure?: string;
+    tags?: NarrativeTagSelection;
     entry_key?: string;
     locale?: ContentLocale;
     requested_steps?: string[];
@@ -1618,6 +1626,7 @@ app.post("/api/narrative/start", async (req, res) => {
     storyType: story_type,
     storyTheme: story_theme,
     narrativeStructure: narrative_structure,
+    tags,
     entryKey: entry_key,
     locale,
     uploadedScript: parsedUploadedScript,
@@ -1683,6 +1692,12 @@ interface LaunchRunParams {
   storyType?: string;
   storyTheme?: string;
   narrativeStructure?: string;
+  /**
+   * 标签选择。类型/题材两轴为空时由标签兜底推导（deriveAxesFromTags），
+   * 使「标签输入」这条路径也能参与结构投票，而不是只拼一句话进 userInput。
+   * 缺省时从 `_entry.json` 读 —— 标签在确认输入时就落盘了，前端不必再传一遍。
+   */
+  tags?: NarrativeTagSelection;
   useLegacyPipeline?: boolean;
   useBlueprint?: boolean;
   entryKey?: string;
@@ -1826,16 +1841,24 @@ function launchNarrativeRun(p: LaunchRunParams): LaunchedRun {
   const hasExplicitGenre = typeof genre_code === "string" && genre_code.trim().length > 0;
 
   // 三轴路由：结构由品类/类型/题材综合推导，用户显式指定则短路（PRD v1.4 §3.2.2）。
-  const resolvedStructure = resolveNarrativeStructure({
-    genreCode: hasExplicitGenre ? genre_code!.trim() : null,
+  // 类型/题材先按「直选优先、标签兜底」定下来，再投票 —— 否则标签路径的条目
+  // 两个轴恒为 null，投票退化成品类单轴。
+  const entryTags = p.tags ?? (isSafeEntryKey ? loadEntryConfig(entry_key!)?.tags : undefined);
+  const userAxes = resolveUserAxes({
     storyType: p.storyType,
     storyTheme: p.storyTheme,
+    tags: entryTags,
+  });
+  const resolvedStructure = resolveNarrativeStructure({
+    genreCode: hasExplicitGenre ? genre_code!.trim() : null,
+    storyType: userAxes.storyType,
+    storyTheme: userAxes.storyTheme,
     explicit: p.narrativeStructure,
   });
   const narrativeAxes: NarrativeAxesSelection = {
     genre: hasExplicitGenre ? genre_code!.trim() : null,
-    storyType: p.storyType ?? null,
-    storyTheme: p.storyTheme ?? null,
+    storyType: userAxes.storyType,
+    storyTheme: userAxes.storyTheme,
     structure: resolvedStructure.structure,
   };
   const state: RunState = {
@@ -1853,6 +1876,7 @@ function launchNarrativeRun(p: LaunchRunParams): LaunchedRun {
     genreCode: hasExplicitGenre ? genre_code!.trim() : undefined,
     narrativeAxes,
     structureSource: resolvedStructure.source,
+    structureRationale: buildStructureRationale(resolvedStructure, userAxes.derived),
     model: resolvedModel,
     outputDir: reuseOutputDir,
     pipelineId: p.pipelineId,
@@ -1875,7 +1899,13 @@ function launchNarrativeRun(p: LaunchRunParams): LaunchedRun {
         genreCode: state.genreCode,
         storyType: narrativeAxes.storyType ?? undefined,
         storyTheme: narrativeAxes.storyTheme ?? undefined,
-        narrativeStructure: narrativeAxes.structure ?? undefined,
+        // 条目只存**用户的覆盖**，不存推导结论。结论是三轴的派生值，落盘后会在
+        // 下一次被当成 explicit 读回来短路投票 —— 用户改了类型或题材，结构却
+        // 永远锁在第一次的结论上。结论要看哪一次跑成什么，去那次的 manifest 读。
+        narrativeStructure:
+          resolvedStructure.source === "explicit"
+            ? (narrativeAxes.structure ?? undefined)
+            : undefined,
         complexity: effectiveComplexity,
         locale: contentLocale,
       });
@@ -1931,6 +1961,7 @@ function launchNarrativeRun(p: LaunchRunParams): LaunchedRun {
     autoDetectTier: hasExplicitGenre ? false : (resolvedRoutingMode === "manual" ? false : (auto_detect !== false)),
     genreCode: hasExplicitGenre ? genre_code!.trim() : undefined,
     narrativeAxes,
+    narrativeTags: entryTags,
     usePlanner: use_legacy_pipeline === true ? false : undefined,
     locale: contentLocale,
   });
@@ -2061,6 +2092,8 @@ app.post("/api/narrative/entry/start", (req, res) => {
       storyType?: string | null;
       storyTheme?: string | null;
       narrativeStructure?: string | null;
+      /** 标签选择；类型/题材为空时兜底推导两轴。不传则由 launchNarrativeRun 从 `_entry.json` 读。 */
+      tags?: NarrativeTagSelection;
       complexity?: number;
       routeGroup?: "planning" | "narrative";
       autoDetect?: boolean;
@@ -2134,6 +2167,9 @@ app.post("/api/narrative/entry/start", (req, res) => {
       genreCode: primary.genreCode ?? undefined,
       storyType: primary.storyType ?? undefined,
       storyTheme: primary.storyTheme ?? undefined,
+      // 这个字段是**用户覆盖**的透传通道：调用方传了就是他显式点了某个结构。
+      // 不要把 /plan 回的推导结论填进来 —— 那会在下一次被当成 explicit 读回去，
+      // 把三轴投票永久短路（见 launchNarrativeRun 里的落盘注释）。
       narrativeStructure: primary.narrativeStructure ?? undefined,
       complexity: primary.complexity,
       locale: contentLocale,
@@ -2155,6 +2191,7 @@ app.post("/api/narrative/entry/start", (req, res) => {
       storyType: p.storyType ?? undefined,
       storyTheme: p.storyTheme ?? undefined,
       narrativeStructure: p.narrativeStructure ?? undefined,
+      tags: p.tags,
       entryKey,
       locale: body.locale,
       // 身份一律沿用 /plan 铸的 pipelineId（前端泳道键与 SSE 帧同源的唯一保证）；
@@ -5448,7 +5485,7 @@ function respondAgentRunError(res: express.Response, agentId: string, err: unkno
 }
 
 /**
- * G3：席位发现。返回二十席及其可单跑性，供平台代理与画布查询"有哪些助手、
+ * G3：席位发现。返回全表席位及其可单跑性，供平台代理与画布查询"有哪些助手、
  * 今天哪些能被单独调用、调用前还缺什么输入"，不必各自硬编码席位到 step 的映射。
  */
 app.get("/api/narrative/seats", (_req, res) => {
@@ -5565,6 +5602,7 @@ app.post("/api/narrative/plan", (req, res) => {
         genreCode: body.genre_code ?? body.genreCode,
         storyType: body.story_type ?? body.storyType,
         storyTheme: body.story_theme ?? body.storyTheme,
+        tags: body.tags,
         narrativeStructure: body.narrative_structure ?? body.narrativeStructure,
         complexity: body.complexity,
         routeGroup: body.route_group ?? body.routeGroup,
@@ -6176,15 +6214,16 @@ app.post("/api/narrative/ip-dna/start", async (req, res) => {
     adaptation_dimensions?: Partial<import("../ip-dna/index.js").AdaptationDimensions>;
     /** 作者自定义改编补充说明（§5.1 自由文本）：合并进 directive.adaptation_notes 并追加下游 userInput。 */
     adaptation_notes?: string;
+    /** 原作在这次改编里算什么：faithful / balanced / bold / creative，缺省 balanced。 */
+    content_fidelity?: string;
     target_units?: number;
     run_generation?: boolean;
     max_game_units?: number;
-    pipeline_family?: "rpg" | "vn";
     tier?: TierId;
     generation_mode?: ModeId;
     /** 路由组（planning/narrative）：ROUTING 透传（§5.1），与主管线 start 对齐。 */
     route_group?: "planning" | "narrative";
-    /** 品类编码（如 "rpg-jrpg"/"adv-interactive"）：scoped 生成路由依据，决定 pipeline_family（§5.1/§L）。 */
+    /** 品类编码（如 "rpg-jrpg"/"adv-interactive"）：scoped 生成的路由依据（§5.1/§L）。 */
     genre_code?: string;
     complexity?: number;
     model?: string;
@@ -6248,15 +6287,12 @@ app.post("/api/narrative/ip-dna/start", async (req, res) => {
   // 固定 story_timestamp，使 jobId 与 input/output 落盘对齐（续跑/轮询一致）。
   const fixedTimestamp = body.story_timestamp ?? formatIpDnaTimestamp(new Date().toISOString());
 
-  // ROUTING 透传（§5.1/§L）：显式 genre_code → 锁定生成管线品类；并据其模板派生 pipeline_family，
-  // 避免改编选 vn 仍误跑 rpg 层级链。pipeline_family 显式给定时优先。
+  // ROUTING 透传（§5.1/§L）：显式 genre_code 锁定生成管线品类。
+  // 这里曾据品类模板再派生一个 rpg/vn「管线家族」往下传 —— 那是把 117 个品类压成 2 个桶，
+  // 而品类本身已经透传了；没选品类时由编排器的 DEFAULT_ADAPTATION_GENRE 兜底。
   const explicitGenre = typeof body.genre_code === "string" && body.genre_code.trim().length > 0
     ? body.genre_code.trim()
     : undefined;
-  const familyFromGenre: "rpg" | "vn" | undefined = explicitGenre
-    ? (findGenreByCode(explicitGenre)?.pipelineTemplate?.includes("vn") ? "vn" : "rpg")
-    : undefined;
-  const effectiveFamily = body.pipeline_family ?? familyFromGenre;
 
   const buildOptions = (onProgress?: (e: IpDnaProgress) => void, runtime?: Awaited<ReturnType<typeof resolveIpDnaRuntimeAdapters>>) => ({
     files: incoming,
@@ -6267,7 +6303,7 @@ app.post("/api/narrative/ip-dna/start", async (req, res) => {
     gameUnitPlan: body.game_unit_plan,
     dimensions: body.adaptation_dimensions,
     adaptationNotes: typeof body.adaptation_notes === "string" ? body.adaptation_notes : undefined,
-    pipelineFamily: effectiveFamily,
+    contentFidelity: parseContentFidelity(body.content_fidelity),
     targetUnits: body.target_units,
     targetComplexity: body.complexity,
     llm,
@@ -6610,7 +6646,12 @@ app.post("/api/narrative/ip-dna/:runId/confirm-scope", (req, res) => {
     res.status(404).json({ error: `未找到层级树：${req.params.runId}（请先 ingest）` });
     return;
   }
-  const body = req.body as { scope_selections?: unknown[]; scope_full?: boolean; adaptation_notes?: string };
+  const body = req.body as {
+    scope_selections?: unknown[];
+    scope_full?: boolean;
+    adaptation_notes?: string;
+    content_fidelity?: string;
+  };
   const notes = typeof body.adaptation_notes === "string" ? body.adaptation_notes.trim() : "";
   const merged = saveAdaptationConfirmation(source.story_timestamp, source.title, {
     scope_selections: body.scope_selections ?? [],
@@ -6642,7 +6683,7 @@ app.post("/api/narrative/ip-dna/:runId/confirm-units", (req, res) => {
 /** 构建 extract/generate 阶段的编排选项（消费已确认态 + 生成控制）。 */
 function buildStageExtractOptions(
   source: ExtractSource,
-  body: { run_generation?: boolean; pipeline_family?: "rpg" | "vn"; genre_code?: string; tier?: TierId; generation_mode?: ModeId; complexity?: number; model?: string; max_game_units?: number; equip_operators?: boolean; inject_relations?: boolean },
+  body: { run_generation?: boolean; genre_code?: string; tier?: TierId; generation_mode?: ModeId; complexity?: number; model?: string; max_game_units?: number; equip_operators?: boolean; inject_relations?: boolean },
   onProgress?: (e: IpDnaProgress) => void,
   runtime?: Awaited<ReturnType<typeof resolveIpDnaRuntimeAdapters>>,
 ) {
@@ -6651,18 +6692,11 @@ function buildStageExtractOptions(
   const selections = (c.scope_selections as import("../ip-dna/index.js").AdaptationScopeSelection[] | undefined) ?? [];
   const scope = selections.length ? { full: false, selections } : { full: true };
   const llm = ipDnaLlm(body.model);
-  // ROUTING/target_output 透传（§5.1/§L/§4.4d）：genre 优先 body → 确认态 target_output；据模板派生 pipeline_family，
-  // 避免 ROUTING 选 vn 仍误跑 rpg 层级链。pipeline_family 显式优先，其次 genre 派生，再次 target_output 模板派生。
+  // ROUTING/target_output 透传（§5.1/§L/§4.4d）：品类优先 body → 确认态 target_output；
+  // 两处都没有时由编排器的 DEFAULT_ADAPTATION_GENRE 兜底。品类直接往下传，不再压成家族桶。
   const explicitGenre =
     (typeof body.genre_code === "string" && body.genre_code.trim().length > 0 ? body.genre_code.trim() : undefined) ??
     (typeof targetOutput?.genre_code === "string" && targetOutput.genre_code.trim().length > 0 ? targetOutput.genre_code.trim() : undefined);
-  const familyFromGenre: "rpg" | "vn" | undefined = explicitGenre
-    ? (findGenreByCode(explicitGenre)?.pipelineTemplate?.includes("vn") ? "vn" : "rpg")
-    : undefined;
-  const familyFromTemplate: "rpg" | "vn" | undefined = targetOutput?.pipeline_template
-    ? (targetOutput.pipeline_template.includes("vn") ? "vn" : targetOutput.pipeline_template.includes("rpg") ? "rpg" : undefined)
-    : undefined;
-  const effectiveFamily = body.pipeline_family ?? familyFromGenre ?? familyFromTemplate;
   return {
     files: [] as IncomingFile[],
     title: source.title,
@@ -6672,9 +6706,9 @@ function buildStageExtractOptions(
     gameUnitPlan: c.game_unit_plan as import("../ip-dna/index.js").GameUnitPlan | undefined,
     dimensions: c.adaptation_dimensions as Partial<import("../ip-dna/index.js").AdaptationDimensions> | undefined,
     adaptationNotes: c.adaptation_notes as string | undefined,
+    contentFidelity: parseContentFidelity(c.content_fidelity),
     targetUnits: c.target_units as number | undefined,
     targetComplexity: body.complexity ?? targetOutput?.complexity,
-    pipelineFamily: effectiveFamily,
     llm,
     queryEmbedder: runtime?.queryEmbedder,
     frameSampler: runtime?.frameSampler,

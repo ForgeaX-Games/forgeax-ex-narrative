@@ -1,5 +1,5 @@
 /**
- * polish-family.ts — 打磨席位家族（席位 2.3.16 / 2.3.17 / 2.3.18 / 2.3.19）
+ * polish-family.ts — 打磨席位家族（席位 2.5.17 / 2.5.19 / 2.5.19-legacy / 2.5.20）
  *
  * ─────────────────────────────────────────────────────────────────
  * 为什么四席共用一份机制
@@ -159,7 +159,7 @@ export function buildPolishComposer(spec: PolishSeatSpec): PromptComposer {
       design_snippet: (ctx: NarrativeContext): string => buildDesignContextSnippet(ctx),
       user_instructions: (ctx: NarrativeContext): string => userInstructionsBlock(ctx),
     },
-    systemBlockOrder: ["role", "focus", "cot", "invariants", "output_schema"],
+    systemBlockOrder: ["role", "focus", "invariants", "cot", "output_schema"],
     userBlockOrder: [
       "node",
       "characters",

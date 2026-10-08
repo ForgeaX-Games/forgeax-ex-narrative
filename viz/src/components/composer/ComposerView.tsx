@@ -14,16 +14,25 @@ import { clearComposerRunner, registerComposerRunner } from "../../lib/composerR
  * Phase-2 M8：按开始节点切分多管线 → /plan（每条各自 config）→ 落盘 entry.pipelines
  * → `/entry/start` 批量启动全部可运行管线（各自 runId / SSE / manifest）。
  */
+/**
+ * 把"自己描述"这条入口的两半折成一段送进管线的需求文本。
+ *
+ * 两半**都要折**。从前按 `inputTab` 二选一：标签档只取标签、文本档只取文本，于是用户
+ * 既写了需求又勾了标签时，其中一份进不了管线 —— 而那正是 v4 要的并存形态。
+ *
+ * 标签那一行带标注。不带的话，两段直接拼起来在模型看来是同一段散文的续写，它读不出
+ * 后半截是六维标签的取值而不是需求描述的一部分。
+ */
 function composeUserInput(config: Record<string, unknown>): string {
-  const tab = (config.inputTab as string) ?? "text";
-  if (tab === "tags") {
-    const sel = (config.tagSelections as Record<string, string>) ?? {};
-    const parts = Object.values(sel).map((v) => String(v ?? "").trim()).filter(Boolean);
-    const custom = String(((config.tagCustomTexts as Record<string, string>) ?? {}).custom ?? "").trim();
-    if (custom) parts.push(custom);
-    return parts.join("；");
-  }
-  return String(config.userInput ?? "").trim();
+  const text = String(config.userInput ?? "").trim();
+  const sel = (config.tagSelections as Record<string, string>) ?? {};
+  const picked = Object.values(sel).map((v) => String(v ?? "").trim()).filter(Boolean);
+  const custom = String(((config.tagCustomTexts as Record<string, string>) ?? {}).custom ?? "").trim();
+  if (custom) picked.push(custom);
+  const tagLine = picked.length
+    ? `${getLocale() === "en" ? "Tags" : "标签"}：${picked.join(" · ")}`
+    : "";
+  return [text, tagLine].filter(Boolean).join("\n\n");
 }
 
 /** 一条锚定管线解析出的启动参数（各自的 routing / expert 节点为准）。 */
@@ -35,9 +44,13 @@ interface ResolvedPipelineConfig {
   mode?: ModeId;
   genreCode?: string;
   complexity?: number;
-  /** 三轴中用户可选的两轴；结构轴由后端按类型+题材推导，前端不传。 */
   storyType?: string;
   storyTheme?: string;
+  /**
+   * 第四轴「叙事结构」的**用户覆盖**，缺省 undefined = 跟随三轴投票推导。
+   * 不要拿 /plan 回的推导结论填它：那等于把结论当显式指定，投票会被永久短路。
+   */
+  narrativeStructure?: string;
   pipelineTemplate?: string;
   autoDetect: boolean;
   /** 输入节点走的是 IP 文件链，需转交 IP 生成器而非文本管线。 */
@@ -45,11 +58,11 @@ interface ResolvedPipelineConfig {
   /**
    * 这条管线的需求是怎么给的（直接输入 / 标签选择 / 文件上传）。
    *
-   * 要单独带出来，是因为 `userInput` 只是三种输入方式**折算**后的文本：标签选出来的
-   * 五维标签折成一行分号串、文件链折成空串。条目落盘时只认 userInput 就会把标签链
-   * 与文件链一律记成"直接输入"，任务面板于是显示不出用户实际投了什么。
+   * 要单独带出来，是因为 `userInput` 只是**折算**后的文本：标签取值折成带标注的一行、
+   * 上传原作折成空串。条目落盘时只认 userInput 就分不出用户实际投了什么，任务面板于是
+   * 把上传型条目也显示成一段需求描述。
    */
-  inputTab: "text" | "tags" | "file";
+  inputTab: "authored" | "adapted";
   /** 标签链的原始取值（落盘用，不参与路由）。 */
   tags?: { selections?: Record<string, string>; customTexts?: Record<string, string> };
   /** 文件链投了哪些文件（正文不入条目，只记名单）。 */
@@ -80,9 +93,10 @@ function resolvePipelineConfig(anchored: AnchoredPipeline): ResolvedPipelineConf
   const routing = anchored.routingNode;
   const expert = anchored.orderedNodes.find((n) => n.category === "expert");
   const inputCfg = anchored.inputNode.config;
-  const rawTab = inputCfg.inputTab as string | undefined;
+  // 存量画布里可能还写着旧三档（text / tags / file），在这里吃下来。
+  const rawTab = String(inputCfg.inputTab ?? "").toLowerCase();
   const inputTab: ResolvedPipelineConfig["inputTab"] =
-    rawTab === "tags" || rawTab === "file" ? rawTab : "text";
+    rawTab === "adapted" || rawTab === "file" || rawTab === "works" ? "adapted" : "authored";
 
   // 冲突以「自由编排」为准：路由节点优先于专家节点。
   const routeGroup =
@@ -123,19 +137,20 @@ function resolvePipelineConfig(anchored: AnchoredPipeline): ResolvedPipelineConf
     // 三轴住在需求入口节点上（它兼任 routingNode）；独立路由节点没有这两轴，取到 undefined 即「自动」。
     storyType: (routing?.config.storyType as string | null | undefined) || undefined,
     storyTheme: (routing?.config.storyTheme as string | null | undefined) || undefined,
+    narrativeStructure:
+      (routing?.config.narrativeStructure as string | null | undefined) || undefined,
     pipelineTemplate: expert?.pipelineTemplate,
     autoDetect,
-    isFileFlow: inputTab === "file",
+    isFileFlow: inputTab === "adapted",
     inputTab,
-    tags:
-      inputTab === "tags"
-        ? {
-            selections: (inputCfg.tagSelections as Record<string, string>) ?? {},
-            customTexts: (inputCfg.tagCustomTexts as Record<string, string>) ?? {},
-          }
-        : undefined,
+    // 标签无条件带上，不再"只有标签档才带"。按档带的后果是用户勾完标签再去写需求文本，
+    // 落盘时标签整份丢掉，下一次还原 INPUT 时它就不存在了。
+    tags: {
+      selections: (inputCfg.tagSelections as Record<string, string>) ?? {},
+      customTexts: (inputCfg.tagCustomTexts as Record<string, string>) ?? {},
+    },
     uploadedFileNames:
-      inputTab === "file" ? ((inputCfg.uploadedFileNames as string[]) ?? []) : undefined,
+      inputTab === "adapted" ? ((inputCfg.uploadedFileNames as string[]) ?? []) : undefined,
     // 一条管线最多带一位专属成员：多位的技能会在同一段里互相打架，
     // 取可达的第一枚而不是静默合并。
     teamId: (anchored.orderedNodes.find((n) => n.category === "team")?.config.teamId as string | undefined)
@@ -220,6 +235,7 @@ export function ComposerView() {
             genreCode: r.genreCode ?? null,
             storyType: r.storyType ?? null,
             storyTheme: r.storyTheme ?? null,
+            narrativeStructure: r.narrativeStructure ?? null,
             complexity: r.complexity,
             routeGroup: r.routeGroup,
             pipelineTemplate: r.pipelineTemplate,
@@ -248,6 +264,7 @@ export function ComposerView() {
           genreCode: primary.genreCode ?? null,
           storyType: primary.storyType ?? null,
           storyTheme: primary.storyTheme ?? null,
+          narrativeStructure: primary.narrativeStructure ?? null,
           complexity: primary.complexity,
           routeGroup: primary.routeGroup,
           pipelineTemplate: primary.pipelineTemplate,
@@ -262,8 +279,8 @@ export function ComposerView() {
       if (planned.pipelines.length > 1) setListExpanded(entryKey, true);
 
       await saveEntry(entryKey, {
-        // 输入方式按入口节点的实际取值落盘（"works" 是 IP 作品链的既有口径）。
-        inputType: primary.inputTab === "tags" ? "tags" : primary.inputTab === "file" ? "works" : "text",
+        // 两条入口同一套词，前后端一致；服务端的 toIntakeSource 只负责吃存量与旧调用方。
+        inputType: primary.inputTab,
         tags: primary.tags,
         uploadedFileNames: primary.uploadedFileNames,
         userInput: primary.userInput,
@@ -273,6 +290,7 @@ export function ComposerView() {
         genreCode: primary.genreCode,
         storyType: primary.storyType,
         storyTheme: primary.storyTheme,
+        narrativeStructure: primary.narrativeStructure,
         complexity: primary.complexity,
         locale: getLocale() === "en" ? "en" : "zh",
         pipelines: planned.pipelines,
@@ -296,6 +314,7 @@ export function ComposerView() {
           genreCode: cfg?.genreCode ?? null,
           storyType: cfg?.storyType ?? null,
           storyTheme: cfg?.storyTheme ?? null,
+          narrativeStructure: cfg?.narrativeStructure ?? null,
           complexity: cfg?.complexity,
           routeGroup: cfg?.routeGroup,
           autoDetect: cfg?.autoDetect,

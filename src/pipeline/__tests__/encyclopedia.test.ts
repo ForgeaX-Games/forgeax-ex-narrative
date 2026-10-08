@@ -16,7 +16,7 @@ import type { LLMClient, WebSearchResult } from "../runtime/llm-client.js";
 import "../core/step-registrations.js";
 
 /**
- * 百科娘（2.3.20）。
+ * 百科娘（2.5.1）。
  *
  * 本席的唯一失败模式不是"跑不起来"，而是**悄悄退化**：没有联网通道时，
  * 一份凭模型记忆写的作品设定与一份真检索来的在文本上分不出差别，而下游会把它

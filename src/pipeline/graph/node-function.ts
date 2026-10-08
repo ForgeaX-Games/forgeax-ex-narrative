@@ -13,7 +13,7 @@
  * ─────────────────────────────────────────────────────────────────
  * 形制来源
  * ─────────────────────────────────────────────────────────────────
- * 条件挂在**边**上、聚合由 merge_back 边显式声明、分支带代价档、结局分 H/B/O 与
+ * 条件挂在**边**上、聚合由 merge 边显式声明、分支带代价档、结局分 good/bad/neutral 与
  * local/global——这四样都不是新造的，是从归档影游实现（VnNextEdge / branch_type /
  * VnEnding）迁进来的已验证设计。归档那条管线整体被新架构替换，但这几件形制经判断
  * 是品类无关的叙事原语，值得升为通用层。
@@ -63,7 +63,7 @@ const FUNCTION_LABEL: Readonly<Record<NodeFunction, string>> = {
   normal: "普通",
 };
 
-/** 收集指向本节点的边（用于校验聚合是否被 merge_back 显式标出）。 */
+/** 收集指向本节点的边（用于校验聚合是否被 merge 边显式标出）。 */
 function incomingEdges(
   nodes: readonly FunctionCheckInput[],
 ): Map<string, NodeEdge[]> {
@@ -154,13 +154,13 @@ export function checkNodeFunctions(nodes: readonly FunctionCheckInput[]): NodeFu
         break;
       }
       case "merge": {
-        // 聚合应由上游的 merge_back 边显式标出，而不是靠入度大于一被事后推断
+        // 聚合应由上游的 merge 边显式标出，而不是靠入度大于一被事后推断
         const ins = incoming.get(n.id) ?? [];
-        if (ins.length > 0 && !ins.some((e) => e.kind === "merge_back")) {
+        if (ins.length > 0 && !ins.some((e) => e.kind === "merge")) {
           issues.push({
             nodeId: n.id,
             kind: "missing_condition",
-            message: `聚合节点 ${n.id} 的入边无一标为 merge_back：各分支凭什么汇回没有交代`,
+            message: `聚合节点 ${n.id} 的入边无一标为 merge：各分支凭什么汇回没有交代`,
           });
         }
         break;

@@ -104,7 +104,7 @@ rewards.items 只能来自两个来源：① 道具清单（下方"道具清单"
 
 numbers 的四个子项均可缺省；无依据可填时整个 numbers 一并省略，不要输出空壳。`,
   },
-  systemBlockOrder: ["role", "task_spec", "ip_dna", "style_guide", "constraints", "cot", "output_schema"],
+  systemBlockOrder: ["role", "task_spec", "style_guide", "ip_dna", "constraints", "cot", "output_schema"],
   // 本席按情节节点分片，user 段铺的是**当前这一片**的材料，故从 ctx._chunk.plot 取节点。
   // 分片执行由 ChunkedRunner 承担，它对每片以 {...ctx, _chunk} 重装配一次 user 段；
   // legacy 循环里也照同一口径构造 chunkCtx，两条路因此发出逐字相同的提示词。

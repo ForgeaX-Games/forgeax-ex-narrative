@@ -29,7 +29,8 @@ import { extractJSON } from "../../runtime/llm-client.js";
 import { appendUserInstructions } from "../../steps/design-context-helper.js";
 import { composeSystemPrompt, IP_DNA_SLOT_BLOCK, type PromptComposer } from "../../runtime/prompt-composer.js";
 import { getStreamEmit, ORIGINALITY_NOTE, runBySegments } from "./_shared.js";
-import { computeWorldSnapshot, renderWorldSnapshot } from "./vn-state-ledger.js";
+import { computeWorldSnapshot, renderWorldSnapshot } from "../../graph/state-ledger.js";
+import { vnBeatsToLedgerNodes } from "./vn-state-ledger.js";
 
 /** 段级并行度：互不依赖的线性段同时跑，段内仍按子批串行保连贯 */
 const SEGMENT_CONCURRENCY = 4;
@@ -165,7 +166,11 @@ ${timeline}\n`;
 function renderWorldSnapshotBlock(ctx: NarrativeContext, batch: VnBranchedBeat[]): string {
   if (ctx.world_state_ledger && batch.length > 0) {
     const beats = ctx.vn_branched_beats?.beats ?? [];
-    const snapshot = computeWorldSnapshot(ctx.world_state_ledger, batch[0].beat_id, beats);
+    const snapshot = computeWorldSnapshot(
+      ctx.world_state_ledger,
+      batch[0].beat_id,
+      vnBeatsToLedgerNodes(beats),
+    );
     return "\n" + renderWorldSnapshot(snapshot) + "\n";
   }
   return renderCharacterTimeline(ctx, batch);

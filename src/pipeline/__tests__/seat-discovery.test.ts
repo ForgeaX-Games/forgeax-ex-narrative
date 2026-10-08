@@ -16,7 +16,7 @@ describe("resolveSeatRunnableAgentId", () => {
   });
 
   it("单步席但 step 命名与席位不同：解析到通用兜底绑定的那个 step", () => {
-    // 故事大纲席（2.3.7）实现是 story_framework，历史命名不一致，正是这层解析要补的缺口。
+    // 故事大纲席（2.5.8）实现是 story_framework，历史命名不一致，正是这层解析要补的缺口。
     expect(resolveSeatRunnableAgentId("outline")).toBe("story_framework");
   });
 

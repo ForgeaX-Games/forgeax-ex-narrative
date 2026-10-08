@@ -3,11 +3,12 @@ import type { LLMClient } from "../runtime/llm-client.js";
 import { extractJSON } from "../runtime/llm-client.js";
 import { buildDesignContextSnippet, userInstructionsBlock, buildIpSourceReference } from "./design-context-helper.js";
 import { composeSystemPrompt, composeUserPrompt, IP_DNA_SLOT_BLOCK, type PromptComposer } from "../runtime/prompt-composer.js";
+import { complexityTier } from "../runtime/layer-threshold-config.js";
 
 export const CHARACTER_ENRICHMENT_COMPOSER: PromptComposer = {
   stepId: "character_enrichment",
   skillSlots: ["style_guide", "examples", "constraints", "character_archetype"],
-  systemBlockOrder: ["role", "task_requirements", "ip_dna", "character_archetype", "style_guide", "examples", "constraints", "cot", "ip_source", "output_format_hint"],
+  systemBlockOrder: ["role", "task_requirements", "character_archetype", "style_guide", "ip_dna", "constraints", "cot", "examples", "ip_source", "output_format_hint"],
   // user_instructions 必须列进 composer：runner 只认 composer 装配出的 user prompt，
   // 而重生成时的用户修改意见原先靠 appendUserInstructions 在 step 函数里事后追加，
   // runner 路径没有那个插入点——漏了它，"按我的意见重做"会静默变成"原样再来一遍"。
@@ -102,7 +103,7 @@ ${JSON.stringify(ctx.core_settings ?? {}, null, 2)}
 ## 故事框架概要
 ${ctx.story_framework
     ? JSON.stringify(ctx.story_framework.framework.nodes.map(n => ({ name: n.name, narrative_function: n.narrative_function })), null, 2)
-    : "（无）"}`;
+    : "（无）"}${buildBatchScopeBlock(ctx)}`;
     },
 
     design_snippet: (ctx: NarrativeContext): string => buildDesignContextSnippet(ctx),
@@ -315,6 +316,79 @@ export function normalizeCharacterSheets(
 
   ctx.player_name = sheets.find((s) => s._is_player)?.name ?? sheets[0]?.name;
   return sheets;
+}
+
+
+/**
+ * 本次要写的角色名单 —— 主角 + 关键 NPC，来自核心设定。
+ *
+ * 分批要成立，前提是"要写谁"在开工前就已知。角色席看着像凭空生成角色，其实不是：
+ * 核心设定那一步已经把主角与关键 NPC 定下来了，本席做的是把每个人从一行简介写成
+ * 一份完整档案。名单既然是已知的，就可以按名单切批。
+ *
+ * 名单缺失时返回空数组，调用方据此退回"一次调用出全部"——那是本席原本的跑法，
+ * 没有名单时它仍然正确，只是分不了批。
+ */
+/**
+ * 本批要写谁。
+ *
+ * 分批最大的代价是角色同质化：各批看不见彼此写出的档案，容易各自写出一个"沉默的
+ * 复仇者"。所以这一段只限定**本批写谁**，全名单仍然完整地留在上面的核心设定里——
+ * 模型看得见全局有哪些人、彼此什么关系，只是这一趟只交付其中几份。
+ */
+function buildBatchScopeBlock(ctx: NarrativeContext): string {
+  const names = chunkNames(ctx);
+  if (!names?.length) return "";
+  return `
+
+## 本批要写的角色（只输出这几位的档案）
+${names.map((n) => `- ${n}`).join("\n")}
+
+上面的核心设定里还有别的角色，他们由另外几批负责。你能看见他们是为了让本批的角色
+与他们区分开——不要输出他们的档案，也不要因为他们不在本批就把关系写空。`;
+}
+
+export function characterRoster(ctx: NarrativeContext): string[] {
+  const cs = ctx.core_settings;
+  if (!cs) return [];
+  const names = [cs.protagonist?.name, ...(cs.key_npcs ?? []).map((n) => n.name)]
+    .map((n) => String(n ?? "").trim())
+    .filter(Boolean);
+  return [...new Set(names)];
+}
+
+/**
+ * 每批写几个角色 —— 由体量决定。
+ *
+ * 一次调用出全部角色，在小体量下没问题；角色一多就开始塌：模型把 token 预算摊到
+ * 十几份档案上，越靠后越敷衍，而每份档案要的是 personal_life、双语立绘提示词这类
+ * 需要篇幅的东西。分批是让每个角色都拿到完整的注意力。
+ *
+ * 小体量不分批（返回一个大到装得下所有人的批），因为分批本身有代价：批与批之间
+ * 看不见彼此写出的档案，角色同质化的风险要靠别的办法压（每批的提示词里带全名单）。
+ * 角色本来就不多时，这个代价换不来什么。
+ */
+export function characterBatchSize(ctx: NarrativeContext): number {
+  const tier = complexityTier(ctx.global_control_params?.complexity);
+  if (tier <= 2) return Number.MAX_SAFE_INTEGER;
+  return tier >= 5 ? 2 : tier >= 4 ? 3 : 4;
+}
+
+/** 按体量把名单切成批；名单为空时返回空数组（调用方退回全量单次）。 */
+export function characterBatches(ctx: NarrativeContext): string[][] {
+  const roster = characterRoster(ctx);
+  if (roster.length === 0) return [];
+  const size = characterBatchSize(ctx);
+  if (size >= roster.length) return [roster];
+  const out: string[][] = [];
+  for (let i = 0; i < roster.length; i += size) out.push(roster.slice(i, i + size));
+  return out;
+}
+
+/** 本片要写的角色；不在分片语境里时返回 undefined（全量跑法）。 */
+function chunkNames(ctx: NarrativeContext): string[] | undefined {
+  const chunk = (ctx as Record<string, unknown>)._chunk as { names?: unknown } | undefined;
+  return Array.isArray(chunk?.names) ? chunk.names.map(String) : undefined;
 }
 
 export async function characterEnrichment(

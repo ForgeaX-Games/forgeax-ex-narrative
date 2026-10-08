@@ -39,12 +39,12 @@ import { initialStoryOutline } from "../steps/initial-story-outline.js";
 import { coreSettingsExtraction } from "../steps/core-settings-extraction.js";
 import { plotSynopsis } from "../steps/plot-synopsis.js";
 import { structureValidationL1, structureValidationL2, structureValidationL3 } from "../steps/structure-validation.js";
+import { stateLedger } from "../steps/state-ledger-step.js";
 import { structureCheck } from "../steps/structure-check.js";
 import { contentCheck } from "../steps/content-check.js";
 import {
   deaiPolish,
   plotRefine,
-  plotPolish,
   playabilityAdapt,
 } from "../steps/polish-seats.js";
 
@@ -98,6 +98,7 @@ import { setCustomTeamProfile } from "../../custom-team/injection.js";
 // Blueprint + Agent Framework (Phase 4 integration)
 import type { PipelineBlueprint, StepBlueprint } from "../blueprint/types.js";
 import { assembleBlueprint } from "../blueprint/assembler.js";
+import { DEFAULT_COMPLEXITY_TIER } from "../runtime/layer-threshold-config.js";
 import { shouldSkipAgent } from "../runtime/run-manifest-runtime.js";
 import { executeAgent } from "./agent-exec.js";
 // Side-effect: register AgentDefs + validators
@@ -225,13 +226,13 @@ const STEP_FNS = new Map<string, PipelineStep>([
   [S.LORE_GENERATION, loreGeneration],
   // 质检段（席位管线的收尾）。只在 STEP_REGISTRY 登记是不够的：run() 靠本表取 fn，
   // 缺项会被 resolveStepId 静默丢掉 —— 预览里有质检、实跑却没有。
+  ["state_ledger", stateLedger],
   ["structure_check", structureCheck],
   ["content_check", contentCheck],
-  // 打磨段（2.3.16–2.3.19）。不在任何默认步序里，但必须登记：自由编排与单步重跑
+  // 打磨段（2.5.17–2.5.20）。不在任何默认步序里，但必须登记：自由编排与单步重跑
   // 都从本表取 fn，缺项会被静默丢掉——画布上拖了、点了、什么也没跑。
   ["deai_polish", deaiPolish],
   ["plot_refine", plotRefine],
-  ["plot_polish", plotPolish],
   ["playability_adapt", playabilityAdapt],
   // 策划步骤 (D0-D4)
   [S.CORE_CONCEPT, coreConcept],
@@ -327,6 +328,10 @@ export class NarrativePipeline {
     // 三轴路由注入：策略段 provider 只认 ctx.narrative_axes，resume 时以 checkpoint 里的为准。
     if (this.config.narrativeAxes && !ctx.narrative_axes) {
       ctx.narrative_axes = { ...this.config.narrativeAxes };
+    }
+    // 标签注入：上下文输入段的创作约束 provider 只认 ctx.narrative_tags。
+    if (this.config.narrativeTags && !ctx.narrative_tags) {
+      ctx.narrative_tags = { ...this.config.narrativeTags };
     }
     if (this.config.locale && !ctx.content_locale) {
       ctx.content_locale = this.config.locale;
@@ -553,8 +558,12 @@ export class NarrativePipeline {
     // lifecycle 在场时逐 agent 判定；否则退回一期的线性前缀跳过。
     const useLifecycleSkip = resuming && !!agentLifecycle;
     let skipping = resuming && !useLifecycleSkip && !!resumeAfter;
+    // 显式跳过与 resume 跳过对 executeStep 是同一个决定（这一步不执行），分开只为
+    // 报给用户的措辞：「已恢复」说的是上次跑过了，「已跳过」说的是本次就不跑。
+    const explicitSkip = new Set(this.config.skipSteps ?? []);
     const shouldSkip = (stepId: string): boolean =>
-      useLifecycleSkip ? shouldSkipAgent(agentLifecycle, stepId) : skipping;
+      explicitSkip.has(stepId) ||
+      (useLifecycleSkip ? shouldSkipAgent(agentLifecycle, stepId) : skipping);
 
     const initTotal = getTotal();
     const dynamicHint = modeConfig.isDynamic && usePlanner
@@ -604,7 +613,8 @@ export class NarrativePipeline {
       if (shouldSkip(step.id)) {
         this.emit({
           stage: step.name, stepId: step.id, step: stepNum, totalSteps: getTotal(),
-          status: "completed", message: `${step.name} (已恢复)`,
+          status: "completed",
+          message: `${step.name} (${explicitSkip.has(step.id) ? "已跳过" : "已恢复"})`,
           data: this.extractStepOutput(step.id, ctx),
         });
         if (step.id === resumeAfter) skipping = false;
@@ -882,7 +892,12 @@ export class NarrativePipeline {
       throw new Error(`stopAfterStep '${options!.stopAfterStep}' not found in current pipeline mode '${mode}'`);
     }
 
-    const skipSet = new Set(options?.skipSteps ?? []);
+    // 两个来源都生效：config 是运行级配置（这个管线不跑这些步），options 是本次
+    // 重跑的指令。只认后者会让「配了 skipSteps 的管线一重跑就又跑起来」。
+    const skipSet = new Set([
+      ...(this.config.skipSteps ?? []),
+      ...(options?.skipSteps ?? []),
+    ]);
     const nodeFilterMap = options?.nodeFilter ?? {};
 
     const stepsToRerun = allIds.slice(fromIndex, stopIndex + 1)
@@ -1144,6 +1159,9 @@ export class NarrativePipeline {
     if (this.config.narrativeAxes && !ctx.narrative_axes) {
       ctx.narrative_axes = { ...this.config.narrativeAxes };
     }
+    if (this.config.narrativeTags && !ctx.narrative_tags) {
+      ctx.narrative_tags = { ...this.config.narrativeTags };
+    }
     // 与 run() 一致：Blueprint 路径同样在每步前走 prepareInjection，缺这一句
     // 专属团队会在蓝图路径静默失效（名实不符，且不报错）。
     if (this.config.customTeamProfile) {
@@ -1216,7 +1234,7 @@ export class NarrativePipeline {
 
     const mode: ModeId = this.config.mode ?? TIER_DEFAULT_MODE[tier];
     const genreCode = ctx.demand_analysis?.genre_code ?? "rpg-jrpg";
-    const complexity = ctx.global_control_params?.complexity ?? 0.5;
+    const complexity = ctx.global_control_params?.complexity ?? ctx.complexity ?? DEFAULT_COMPLEXITY_TIER;
 
     // Assemble Blueprint
     const blueprint = assembleBlueprint({
@@ -1276,14 +1294,19 @@ export class NarrativePipeline {
     const agentLifecycle = this.config.agentLifecycle;
     const useLifecycleSkip = resuming && !!agentLifecycle;
     let skipping = resuming && !useLifecycleSkip && !!resumeAfter;
+    // 显式跳过与 resume 跳过对 executeStep 是同一个决定（这一步不执行），分开只为
+    // 报给用户的措辞：「已恢复」说的是上次跑过了，「已跳过」说的是本次就不跑。
+    const explicitSkip = new Set(this.config.skipSteps ?? []);
     const shouldSkip = (stepId: string): boolean =>
-      useLifecycleSkip ? shouldSkipAgent(agentLifecycle, stepId) : skipping;
+      explicitSkip.has(stepId) ||
+      (useLifecycleSkip ? shouldSkipAgent(agentLifecycle, stepId) : skipping);
 
     const executeStepBlueprint = async (step: StepBlueprint, stepNum: number) => {
       if (shouldSkip(step.stepId)) {
         this.emit({
           stage: step.agentDef.name, stepId: step.stepId, step: stepNum, totalSteps: total,
-          status: "completed", message: `${step.agentDef.name} (已恢复)`,
+          status: "completed",
+          message: `${step.agentDef.name} (${explicitSkip.has(step.stepId) ? "已跳过" : "已恢复"})`,
           data: this.extractStepOutput(step.stepId, ctx),
         });
         if (step.stepId === resumeAfter) skipping = false;

@@ -71,10 +71,29 @@ export interface NarrativeAxesSelection {
   structure?: string | null;
 }
 
+/**
+ * 标签选择的六个维度（与 viz 的 TAG_DIMENSIONS 同键）。
+ *
+ * 其中「世界观底色 genre」与「母题 theme」两维部分落在叙事类型/题材两轴上，
+ * 由 knowledge/narrative-axes/tag-axis-mapping.ts 换算；其余四维
+ * （母题 / 核心冲突 / 风格基调 / 世界观类型）没有对应的轴，走提示词的
+ * 上下文输入段作为**创作约束**消费 —— 而不是只拼一句话塞进 user_input。
+ */
+export interface NarrativeTags {
+  selections?: Record<string, string>;
+  customTexts?: Record<string, string>;
+}
+
 export interface NarrativeContext {
   user_input: string;
   /** 三轴路由选择，运行开始时由 PipelineConfig 注入；缺省表示未换轴的旧条目。 */
   narrative_axes?: NarrativeAxesSelection;
+  /**
+   * 标签选择，运行开始时由 PipelineConfig 注入。
+   * 两个下游：类型/题材两轴的兜底推导（在 server 侧算完写进 narrative_axes），
+   * 与提示词上下文输入段的结构化创作约束（见 prompt/tag-slots.ts）。
+   */
+  narrative_tags?: NarrativeTags;
   /** UI locale for generated narrative content (en/zh). Injected from PipelineConfig at run start. */
   content_locale?: ContentLocale;
   /**
@@ -93,6 +112,11 @@ export interface NarrativeContext {
   story_framework?: StoryFramework;
   outlines_generated?: OutlinesGenerated;
   detailed_outlines_generated?: DetailedOutlinesGenerated;
+  /**
+   * 注入式结构席骨架（IP 改编专用）：在场即「L1/L2 的树已经定了，只缺内容」。
+   * 由原作剧情树确定性映射而来，普通生成无此字段。
+   */
+  injected_structure_seed?: StructureSeatSeed;
   detailed_character_sheets?: CharacterSheet[];
   plots_generated?: PlotsGenerated;
   jrpg_script?: JrpgScript;
@@ -103,7 +127,7 @@ export interface NarrativeContext {
   item_lore?: ItemLore[];
   item_database?: GameItem[];
   quest_graph?: QuestGraph;
-  /** 百科娘（2.3.20）检索总结：目标作品/史实的资料汇编，供下游席位当"外部事实"引用。 */
+  /** 百科娘（2.5.1）检索总结：目标作品/史实的资料汇编，供下游席位当"外部事实"引用。 */
   encyclopedia_doc?: EncyclopediaDoc;
   player_name?: string;
   global_control_params?: GlobalControlParams;
@@ -547,9 +571,8 @@ export interface WorldSnapshot {
 export interface GlobalControlParams {
   complexity: number;
   deviation: number;
-  target_structure?: TargetStructure | null;
+  node_budget_override?: NodeBudgetOverride | null;
   layer_controls?: LayerControls;
-  framework_type?: FrameworkType;
   /** @deprecated use getEntropy(complexity) instead */
   entropy_budget?: number;
   /** @deprecated use deviation (continuous number) instead */
@@ -572,14 +595,20 @@ export interface LayerControls {
   layer_2: LayerControl;
 }
 
-export type FrameworkType = "linear" | "dual_climax" | "multi_thread" | "nested" | "spiral";
-
-export interface TargetStructure {
+/**
+ * 节点预算覆盖 —— 用户或 IP 改编计划明确给出精确节点数时的硬覆盖。
+ *
+ * **它不是「叙事结构」。** 叙事结构的唯一事实源是 `narrative_axes.structure`
+ * 的 12 个 code 及其 `StructureTopology`，管的是「这个故事怎么讲、在哪分叉、
+ * 分了收不收、有几个结局」。这里管的只是「每层开几个节点」。
+ *
+ * 缺省时节点数由体量档位给基线（`COMPLEXITY_NODE_BUDGET`），本覆盖只在用户
+ * 说出「我要 5 个章节」这类精确数字、或 IP 改编计划读出原作章节数时才出现。
+ */
+export interface NodeBudgetOverride {
   l0_nodes: number;
   l1_per_parent: number;
   l2_per_parent: number;
-  enable_branch: boolean;
-  plot_length: number;
 }
 
 export interface PreferenceAnalysis {
@@ -727,18 +756,55 @@ export interface NodeCondition {
 /**
  * 剧情树的出边。
  *
- * kind 区分四种走向：linear 单线推进、choice 玩家抉择、merge_back 收束回主干、
- * ending 走向结局。merge_back 是关键一项——它让"聚合"成为边上的显式声明，
- * 而不是靠"入度大于一"事后推断出来的拓扑巧合。
+ * kind 取契约三值，与提取侧的 `PlotEdgeEvent` 同一套词：continue 单线推进、
+ * choose 玩家抉择、merge 收束回主干。merge 是关键一项——它让"聚合"成为边上的
+ * 显式声明，而不是靠"入度大于一"事后推断出来的拓扑巧合。
+ *
+ * **只回答"这条边怎么走"这一个问题。** 曾有第四档 `ending`（目标是结局），
+ * 于是四个互斥的值实际在回答三个正交的问题：目标出度是否为零（ending）、目标
+ * 入度是否大于一（merge_back）、本节点出度是否大于一（choice）。挤在一个字段里
+ * 就只能定优先级，而任何优先级都会丢信息——按旧次序，"从分叉点选出去、直奔结局"
+ * 的边被记成 ending，它是一个玩家选择这件事就没了；把次序倒过来，则换成结局性丢掉。
+ *
+ * 结局性与汇点性本来就能从目标节点的度数读出来（读者手上有整张图），不需要边来兼职
+ * 转述。留在边上的是图里读不出来的部分：这是不是玩家的选择，以及它的 label 与 condition。
+ *
+ * 词也换了一套：`linear` 与叙事结构轴的 `linear`（线性叙事）同名不同义，读者得靠
+ * 上下文分辨是在说一条边还是一整部作品的结构。`continue` 没有这个二义。
  */
 export interface NodeEdge {
   /** 目标节点 id（结局也是节点）。 */
   to: string;
-  kind: "linear" | "choice" | "merge_back" | "ending";
-  /** UI 标签（choice 时给 A/B/C/D）。 */
+  kind: "continue" | "choose" | "merge";
+  /** UI 标签（choose 时给 A/B/C/D）。 */
   label?: string;
-  /** 走这条边的条件。linear 边通常省略（等价于无条件推进）。 */
+  /** 走这条边的条件。continue 边通常省略（等价于无条件推进）。 */
   condition?: NodeCondition;
+}
+
+/**
+ * 把任何来源的边词汇归一成契约三值 —— 全仓唯一的归一点。
+ *
+ * 需要它是因为归档的影游产物（`VnBeatEdge`）用的是另一套四档
+ * `linear | choice | branch_qte | merge_back`，而 structure_check 要拿同一批规则
+ * 审归档产物与新产物。`branch_qte` 是已停用的互动形式，它与 `choice` 的区别在于
+ * 玩家怎么操作（限时判定 vs 选项），不在于这条边怎么走，所以两者同归 `choose`。
+ *
+ * 认不出来的词归 `continue`：那是"没有特别说法"的走法，不会凭空造出一个分叉或汇点，
+ * 而后两者都会让结构检查按一个不存在的拓扑去判。
+ */
+export function toEdgeKind(raw: unknown): NodeEdge["kind"] {
+  switch (typeof raw === "string" ? raw.trim().toLowerCase() : "") {
+    case "merge":
+    case "merge_back":
+      return "merge";
+    case "choose":
+    case "choice":
+    case "branch_qte":
+      return "choose";
+    default:
+      return "continue"; // continue / linear / 认不出来的
+  }
 }
 
 /**
@@ -759,8 +825,14 @@ export type BranchType = "converge" | "diverge" | "terminal";
  * 一个允许失败的游戏会因为"结局太多"被结构检查误判。
  */
 export interface EndingSpec {
-  /** H 圆满 / B 悲剧 / O 其他（开放、反转、隐藏）。 */
-  label: "H" | "B" | "O";
+  /**
+   * 情感落点，取全仓唯一那套三值（见 `EndingType`）。
+   *
+   * 曾是 `"H" | "B" | "O"`，其中 O 读作"其他（开放、反转、隐藏）"。那个"其他"是个
+   * 收容档：一个隐藏的悲剧既是 B 也是 O，落哪档取决于谁来填。现在按情感落点判，
+   * 隐藏与反转各归其好坏，`neutral` 只装真正没有明确落点的结局。
+   */
+  kind: import("./narrative-ip-dna.js").EndingType;
   /** global 全剧终；local 局部结局（中途 game over、提前圆满）。 */
   scope: "local" | "global";
   /** 达成这个结局要满足什么。 */
@@ -780,7 +852,7 @@ export interface OutlineNode {
   };
   content: string;
   /**
-   * 最优路径标记（席位 2.3.8「需要标记最优路径，即最符合用户需求的那一条链路」）。
+   * 最优路径标记（席位 2.5.9「需要标记最优路径，即最符合用户需求的那一条链路」）。
    * 可选——线性形态（无分支）时全线即最优路径，无须逐点标注。
    */
   on_optimal_path?: boolean;
@@ -817,6 +889,22 @@ export interface DetailedOutlineNode extends OutlineNode {
 
 export interface DetailedOutlinesGenerated {
   detailed_outlines: DetailedOutlineNode[];
+}
+
+/**
+ * 注入式结构席骨架 —— 由原作剧情树确定性映射而来（见 plot-tree-to-structure.ts）。
+ *
+ * 它在 ctx 里出现就意味着「这棵树已经定了」：L1/L2 两席跳过规划 LLM，只补内容。
+ * 设计口径是「树在结构层成形，情节层只填内容」，改编要保真就得让原作的树**成为**
+ * 结构席的产出，而不是让 L1/L2 各自 1:N 重新规划一遍。
+ */
+export interface StructureSeatSeed {
+  /** L1，outline_batch 席的产出形态。 */
+  outlines: OutlineNode[];
+  /** L2，detailed_outline 席的产出形态，与 L1 一一对应。 */
+  detailedOutlines: DetailedOutlineNode[];
+  /** 生成侧 node_id → 原作剧情树节点 id。追溯与排查用，不污染节点本身。 */
+  sourceIds: Record<string, string>;
 }
 
 export interface CharacterPersonalLife {
@@ -904,6 +992,26 @@ export interface PlotNode {
   prev_node: string[];
   next_node: string[];
   narrative_stage: string;
+  /**
+   * 本节点所处的时空坐标。缺省表示"与上游同一时空"——一段接着上一段的对话不换场景，
+   * 硬要它每节点都报一次坐标，报出来的多半是把上游抄一遍。
+   */
+  spacetime?: BeatSpaceTime;
+  /**
+   * 本节点造成的世界状态变更，供状态账本折成快照（见 `pipeline/graph/state-ledger.ts`）。
+   *
+   * 可选，且 `undefined` 与 `[]` 意思不同：空数组是生成侧**明确判定**此节点不改变世界
+   * （纯铺垫、纯对话都算），缺字段是它没说。只有后者会被账本步骤送去补全——这个区分
+   * 是"漏填"与"确实无变更"唯一分得开的办法。
+   *
+   * 为什么不做成必填：情节正文已经 1000-2000 字，再要求同一次调用把状态变更也算准，
+   * 等于让模型在写作的同时做账，两件事互相挤。所以允许它先不填，账本步骤再用一次
+   * 轻量调用批量补回来（`fillMissingDeltas`）。
+   *
+   * 这个字段从前只长在影游的 `VnBranchedBeat` 上，随影游整条线归档而失效。搬到 L3
+   * 是因为状态账本与品类无关：任何品类的故事都有"此刻谁在哪、拿着什么"。
+   */
+  state_deltas?: StateChange[];
 }
 
 export interface PlotsGenerated {
@@ -966,7 +1074,7 @@ export interface JrpgScript {
 // --- L5 道具清单 ---
 
 /**
- * 道具生命周期（席位 2.3.9 职责第二项）。
+ * 道具生命周期（席位 2.5.10 职责第二项）。
  *
  * 一件道具在剧情里的时间轴：什么时候到手、在哪些节点起作用、什么时候脱手、
  * 收场时在谁那儿。有了它，"吃书"这类问题才查得动——第 12 节点用掉的钥匙在第 8 节点
@@ -986,7 +1094,7 @@ export interface ItemLifecycle {
 }
 
 /**
- * 道具附属关系（席位 2.3.9 职责第三项）的一条。
+ * 道具附属关系（席位 2.5.10 职责第三项）的一条。
  *
  * `initial_owner` / `related_character` 只能各记一个角色，而一件道具的牵连往往是
  * 多头的：属于某个势力、由某人锻造、与另一件道具成对、只在某地生效。这些关系是
@@ -1012,16 +1120,16 @@ export interface GameItem {
   value: Record<string, number>;
   max_stack: number;
   read_content?: string;
-  /** 席位 2.3.9 职责第二项：这件道具在剧情里的时间轴。 */
+  /** 席位 2.5.10 职责第二项：这件道具在剧情里的时间轴。 */
   lifecycle?: ItemLifecycle;
-  /** 席位 2.3.9 职责第三项：与角色 / 势力 / 场景 / 其他道具的牵连。 */
+  /** 席位 2.5.10 职责第三项：与角色 / 势力 / 场景 / 其他道具的牵连。 */
   affiliations?: ItemAffiliation[];
 }
 
 // --- L5 任务系统 ---
 
 /**
- * 任务数值（席位 2.3.10「数值系统在此落盘」）。
+ * 任务数值（席位 2.5.11「数值系统在此落盘」）。
  *
  * 四类数值全部可选：老 checkpoint 没有本字段，叙事驱动、无数值系统的品类
  * （影游 / 叙事卡）也不该硬凑。模型只填它有依据能填的那几类。
@@ -1197,7 +1305,7 @@ export interface TierDetectionResult {
 // --- Tier4 叙事卡 ---
 
 // ─────────────────────────────────────────────────────────────────
-// 百科娘（2.3.20 encyclopedia）
+// 百科娘（2.5.1 encyclopedia）
 // ─────────────────────────────────────────────────────────────────
 
 /** 一条资料条目。 */
@@ -1392,7 +1500,15 @@ export interface PipelineConfig {
   mode?: ModeId;
   /** 三轴路由选择；run() 会注入 ctx.narrative_axes 供提示词的叙事策略段装配。 */
   narrativeAxes?: NarrativeAxesSelection;
-  /** 前端选定的复杂度档位（1-5，UI 上即「叙事体量」）；run() 会注入 ctx.complexity 供节点预算派生使用 */
+  /** 标签选择；run() 会注入 ctx.narrative_tags 供提示词的上下文输入段装配创作约束。 */
+  narrativeTags?: NarrativeTags;
+  /**
+   * 用户显式选定的叙事体量档位（1-5，UI 上即「叙事体量」）。
+   *
+   * run() 注入 ctx.complexity；user_preference_analysis 以它为**权威**，
+   * 不再让 LLM 重新判定（否则用户选的史诗会被压回短篇）。不传表示用户没选，
+   * 此时才由该步的 LLM 判断。
+   */
   complexity?: number;
   autoDetectTier?: boolean;
   /**
@@ -1413,6 +1529,23 @@ export interface PipelineConfig {
    * 以及只重跑失败的那一步。
    */
   agentLifecycle?: Record<string, AgentLifecycle>;
+  /**
+   * 首跑就要整步跳过的 step。
+   *
+   * 与 `RerunOptions.skipSteps` 同语义，补上首跑侧的缺口：从前只有 rerun 能跳步，
+   * 首跑不能，于是「这一步的产物已经由别处给定了」在首跑里无法表达。
+   *
+   * **预填 ctx 不等于跳过。** `requiredInputs` 一满足，step 照跑并覆盖预填值。
+   * 要让某步不执行，只有把它列进这里。
+   *
+   * 反过来也要分清：**被丰富不是被覆盖。** IP 改编预填的 `core_settings` /
+   * `worldview_structure` / `detailed_character_sheets` 都是"原作可确定的部分"，
+   * 对应的 step 会把它们扩写成完整产物（原作角色经 `core_settings.key_npcs` 进了
+   * 提示词，LLM 是在丰富而非另编一套）。把这些步跳掉，拿到的是半成品而不是保真。
+   * 所以 IP 改编当前不传本字段 —— 它的三处结构保真分别由 story_framework 的
+   * seeded 模式与 L1/L2 的注入路由承担，那两处是"跑但不许改拓扑"，不是不跑。
+   */
+  skipSteps?: string[];
   /**
    * When true (default), the pipeline uses the Planner engine to determine
    * step sequence based on genre needs matrix. Set to false to use the

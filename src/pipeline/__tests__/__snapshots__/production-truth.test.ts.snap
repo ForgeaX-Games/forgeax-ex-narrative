@@ -952,7 +952,7 @@ exports[`P0 生产真值 golden：消费 step 的 system prompt（注入态） >
 达成这个结局要满足什么。条件写成玩家可感的判据（选了哪个选项、某个数值过线、
 是否持有某物、是否去过某节点），不要写成"剧情需要"。普通节点默认无条件推进。
 条件挂在**出边**上：一个三选分支就是三条边各带自己的条件与代价，不要把三个条件
-堆在节点上再让下游去猜哪个通向哪。收束回主干的边要显式标为 merge_back。
+堆在节点上再让下游去猜哪个通向哪。收束回主干的边要显式标为 merge。
 
 开分支时先定这处分岔的**代价档**，再决定铺几条边：
 - **converge**：路径不同、结果相同——一般失误可挽回，代价是绕远或损耗，走几个节点后汇回；
@@ -961,7 +961,7 @@ exports[`P0 生产真值 golden：消费 step 的 system prompt（注入态） >
 定不出代价档，说明这处分岔本身没想清楚。**几条边指向同一个目标是假分支**，
 玩家的选择没有产生任何差异，宁可不开。每条选择边尽量写明它的代价与人设契合倾向。
 
-结局要分档：**H 圆满 / B 悲剧 / O 其他**（开放、反转、隐藏），并区分作用域——
+结局要分档：**good 圆满 / bad 悲剧 / neutral 无明确落点**（开放式收尾；反转与隐藏按其落点归好或坏），并区分作用域——
 **global** 是全剧终，**local** 是中途的 game over 或提前圆满。允许失败的作品会有
 好几个 local 结局，这是正常的；但 global 结局不该满地都是。
 
@@ -998,7 +998,7 @@ exports[`P0 生产真值 golden：消费 step 的 system prompt（注入态） >
 上面用创作语言描述的这些东西，最终要落进输出 JSON 的具体字段，不是"意思到了"就算完成：
 
 - 节点功能位（起始/分支/聚合/结局/普通） → \`本阶段不直接输出——由下游 outline-tree.deriveTreeFields 从 branch_count/branch_position/should_merge 推导，这里给对结构参数就够，不要额外发明一个 node_function 字段\`
-- 分支的代价档（converge/diverge/terminal）与结局分档（H/B/O） → \`本阶段不输出——留给 Step1.5b 内容填充阶段在 story_elements/tree 语义里落地\`
+- 分支的代价档（converge/diverge/terminal）与结局分档（good/bad/neutral） → \`本阶段不输出——留给 Step1.5b 内容填充阶段在 story_elements/tree 语义里落地\`
 - 最优路径 → \`optimal_branch\`
 
 ## 输出前自检（每条都过才允许输出；任一条不过，内部静默修正后重新过一遍这份清单，
@@ -1070,7 +1070,7 @@ exports[`P0 生产真值 golden：消费 step 的 system prompt（注入态） >
 达成这个结局要满足什么。条件写成玩家可感的判据（选了哪个选项、某个数值过线、
 是否持有某物、是否去过某节点），不要写成"剧情需要"。普通节点默认无条件推进。
 条件挂在**出边**上：一个三选分支就是三条边各带自己的条件与代价，不要把三个条件
-堆在节点上再让下游去猜哪个通向哪。收束回主干的边要显式标为 merge_back。
+堆在节点上再让下游去猜哪个通向哪。收束回主干的边要显式标为 merge。
 
 开分支时先定这处分岔的**代价档**，再决定铺几条边：
 - **converge**：路径不同、结果相同——一般失误可挽回，代价是绕远或损耗，走几个节点后汇回；
@@ -1079,7 +1079,7 @@ exports[`P0 生产真值 golden：消费 step 的 system prompt（注入态） >
 定不出代价档，说明这处分岔本身没想清楚。**几条边指向同一个目标是假分支**，
 玩家的选择没有产生任何差异，宁可不开。每条选择边尽量写明它的代价与人设契合倾向。
 
-结局要分档：**H 圆满 / B 悲剧 / O 其他**（开放、反转、隐藏），并区分作用域——
+结局要分档：**good 圆满 / bad 悲剧 / neutral 无明确落点**（开放式收尾；反转与隐藏按其落点归好或坏），并区分作用域——
 **global** 是全剧终，**local** 是中途的 game over 或提前圆满。允许失败的作品会有
 好几个 local 结局，这是正常的；但 global 结局不该满地都是。
 
@@ -1116,7 +1116,7 @@ exports[`P0 生产真值 golden：消费 step 的 system prompt（注入态） >
 上面用创作语言描述的这些东西，最终要落进输出 JSON 的具体字段，不是"意思到了"就算完成：
 
 - 节点功能位（起始/分支/聚合/结局/普通） → \`本阶段不直接输出——由下游 outline-tree.deriveTreeFields 从 branch_count/branch_position/should_merge 推导，这里给对结构参数就够，不要额外发明一个 node_function 字段\`
-- 分支的代价档（converge/diverge/terminal）与结局分档（H/B/O） → \`本阶段不输出——留给 Step1.5b 内容填充阶段在 story_elements/tree 语义里落地\`
+- 分支的代价档（converge/diverge/terminal）与结局分档（good/bad/neutral） → \`本阶段不输出——留给 Step1.5b 内容填充阶段在 story_elements/tree 语义里落地\`
 - 最优路径 → \`optimal_branch\`
 
 ## 输出前自检（每条都过才允许输出；任一条不过，内部静默修正后重新过一遍这份清单，
@@ -1335,7 +1335,11 @@ exports[`P0 生产真值 golden：消费 step 的 system prompt（注入态） >
     "narration_hints": ["叙事提示"],
     "bgm_hint": "背景音乐提示",
     "camera_hint": "镜头提示"
-  }
+  },
+  "spacetime": { "time": "故事世界纪年", "location": "本节点所在场景" },
+  "state_deltas": [
+    { "dimension": "character", "subject": "角色原名", "attribute": "physical.attire", "to": "新状态" }
+  ]
 }
 
 dialogue_segments[].kind 按内容性质标注（不写默认按 "dialogue" 处理）：
@@ -1343,7 +1347,19 @@ dialogue_segments[].kind 按内容性质标注（不写默认按 "dialogue" 处�
 - "inner_monologue"：角色的内心独白，不出声
 - "narration"：旁白/画外音式的叙述性文字，不是角色台词
 - "sfx"：拟声词或音效提示
-按叙事顺序把三类都塞进这同一个数组，不要把旁白单独挪去别处——顺序本身就是信息。"
+按叙事顺序把三类都塞进这同一个数组，不要把旁白单独挪去别处——顺序本身就是信息。
+
+spacetime 与 state_deltas 记的是"这一节点之后世界变成什么样"，供下游查"走到这里时
+谁在哪、拿着什么"。两项都**可省**：你正在写 1000-2000 字正文，记账不该挤占写作；
+说不准就留空，之后会有一次专门的调用来补。但**填了就要准**——补出来的不如你写时知道的。
+- spacetime：与上一节点同一时空就省掉，不要把上游抄一遍
+- state_deltas：确实什么都没变（纯对话、纯铺垫）就写 []，与"没填"是两回事
+- subject 用角色档案 / 道具库里的原名，逐字一致
+- attribute 只能取以下值，自创的会被丢掉：
+  · character → physical.body | physical.attire | psychology.personality | psychology.persona_base | psychology.current_mood | power_level | relationships
+    relationships 的 to 写成 JSON 字符串：{"target":"对方原名","nature":"关系性质"}
+  · item → location | acquired(to="是"/"否") | condition | durability(to ∈ permanent|multi_use|single_use|consumed)
+  · world / plot → to 直接写新状态描述"
 `;
 
 exports[`P0 生产真值 golden：消费 step 的 system prompt（注入态） > [plot_generation] 注入态 system prompt 冻结为 golden + §7.2b 段序 1`] = `
@@ -1566,7 +1582,11 @@ exports[`P0 生产真值 golden：消费 step 的 system prompt（注入态） >
     "narration_hints": ["叙事提示"],
     "bgm_hint": "背景音乐提示",
     "camera_hint": "镜头提示"
-  }
+  },
+  "spacetime": { "time": "故事世界纪年", "location": "本节点所在场景" },
+  "state_deltas": [
+    { "dimension": "character", "subject": "角色原名", "attribute": "physical.attire", "to": "新状态" }
+  ]
 }
 
 dialogue_segments[].kind 按内容性质标注（不写默认按 "dialogue" 处理）：
@@ -1574,7 +1594,19 @@ dialogue_segments[].kind 按内容性质标注（不写默认按 "dialogue" 处�
 - "inner_monologue"：角色的内心独白，不出声
 - "narration"：旁白/画外音式的叙述性文字，不是角色台词
 - "sfx"：拟声词或音效提示
-按叙事顺序把三类都塞进这同一个数组，不要把旁白单独挪去别处——顺序本身就是信息。"
+按叙事顺序把三类都塞进这同一个数组，不要把旁白单独挪去别处——顺序本身就是信息。
+
+spacetime 与 state_deltas 记的是"这一节点之后世界变成什么样"，供下游查"走到这里时
+谁在哪、拿着什么"。两项都**可省**：你正在写 1000-2000 字正文，记账不该挤占写作；
+说不准就留空，之后会有一次专门的调用来补。但**填了就要准**——补出来的不如你写时知道的。
+- spacetime：与上一节点同一时空就省掉，不要把上游抄一遍
+- state_deltas：确实什么都没变（纯对话、纯铺垫）就写 []，与"没填"是两回事
+- subject 用角色档案 / 道具库里的原名，逐字一致
+- attribute 只能取以下值，自创的会被丢掉：
+  · character → physical.body | physical.attire | psychology.personality | psychology.persona_base | psychology.current_mood | power_level | relationships
+    relationships 的 to 写成 JSON 字符串：{"target":"对方原名","nature":"关系性质"}
+  · item → location | acquired(to="是"/"否") | condition | durability(to ∈ permanent|multi_use|single_use|consumed)
+  · world / plot → to 直接写新状态描述"
 `;
 
 exports[`P0 生产真值 golden：消费 step 的 system prompt（注入态） > [quest_generation] 基线态（无注入）冻结为 golden + 塌缩干净 1`] = `

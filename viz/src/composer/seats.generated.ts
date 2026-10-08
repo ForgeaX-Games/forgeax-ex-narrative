@@ -3,7 +3,7 @@
  * 改席位请改后端注册表，然后跑 `npm run gen:seats`。
  */
 
-export type SeatKind = "generator" | "validator" | "polisher" | "retriever";
+export type SeatKind = "generator" | "validator" | "polisher" | "retriever" | "coordinator";
 
 /**
  * 跑一条管线会不会带上这一席。
@@ -38,8 +38,32 @@ export interface SeatView {
 
 export const ASSISTANT_SEATS: readonly SeatView[] = [
   {
+    id: "entry_config",
+    featureId: "2.5.0",
+    name: "叙事生成配置助手",
+    kind: "coordinator",
+    status: "planned",
+    contentType: null,
+    pipelineRole: "manual",
+    filePrefixes: [],
+    bindings: [],
+  },
+  {
+    id: "encyclopedia",
+    featureId: "2.5.1",
+    name: "百科娘",
+    kind: "retriever",
+    status: "active",
+    contentType: "encyclopedia",
+    pipelineRole: "manual",
+    filePrefixes: ["18_"],
+    bindings: [
+      { scope: null, agentIds: ["encyclopedia_retrieval"] },
+    ],
+  },
+  {
     id: "req_list",
-    featureId: "2.3.1",
+    featureId: "2.5.2",
     name: "需求清单助手",
     kind: "generator",
     status: "active",
@@ -52,7 +76,7 @@ export const ASSISTANT_SEATS: readonly SeatView[] = [
   },
   {
     id: "design_doc",
-    featureId: "2.3.2",
+    featureId: "2.5.3",
     name: "策划文档助手",
     kind: "generator",
     status: "active",
@@ -66,7 +90,7 @@ export const ASSISTANT_SEATS: readonly SeatView[] = [
   },
   {
     id: "worldview",
-    featureId: "2.3.3",
+    featureId: "2.5.4",
     name: "世界观设定助手",
     kind: "generator",
     status: "active",
@@ -79,7 +103,7 @@ export const ASSISTANT_SEATS: readonly SeatView[] = [
   },
   {
     id: "character",
-    featureId: "2.3.4",
+    featureId: "2.5.5",
     name: "角色档案助手",
     kind: "generator",
     status: "active",
@@ -92,7 +116,7 @@ export const ASSISTANT_SEATS: readonly SeatView[] = [
   },
   {
     id: "item",
-    featureId: "2.3.5",
+    featureId: "2.5.6",
     name: "道具清单助手",
     kind: "generator",
     status: "active",
@@ -105,7 +129,7 @@ export const ASSISTANT_SEATS: readonly SeatView[] = [
   },
   {
     id: "scene_list",
-    featureId: "2.3.6",
+    featureId: "2.5.7",
     name: "场景列表助手",
     kind: "generator",
     status: "active",
@@ -118,7 +142,7 @@ export const ASSISTANT_SEATS: readonly SeatView[] = [
   },
   {
     id: "outline",
-    featureId: "2.3.7",
+    featureId: "2.5.8",
     name: "故事大纲助手",
     kind: "generator",
     status: "active",
@@ -131,7 +155,7 @@ export const ASSISTANT_SEATS: readonly SeatView[] = [
   },
   {
     id: "structure",
-    featureId: "2.3.8",
+    featureId: "2.5.9",
     name: "故事结构助手",
     kind: "generator",
     status: "active",
@@ -144,7 +168,7 @@ export const ASSISTANT_SEATS: readonly SeatView[] = [
   },
   {
     id: "plot",
-    featureId: "2.3.9",
+    featureId: "2.5.10",
     name: "故事情节助手",
     kind: "generator",
     status: "active",
@@ -157,7 +181,7 @@ export const ASSISTANT_SEATS: readonly SeatView[] = [
   },
   {
     id: "quest",
-    featureId: "2.3.10",
+    featureId: "2.5.11",
     name: "任务助手",
     kind: "generator",
     status: "active",
@@ -170,7 +194,7 @@ export const ASSISTANT_SEATS: readonly SeatView[] = [
   },
   {
     id: "storyboard",
-    featureId: "2.3.11",
+    featureId: "2.5.12",
     name: "分镜助手",
     kind: "generator",
     status: "active",
@@ -183,7 +207,7 @@ export const ASSISTANT_SEATS: readonly SeatView[] = [
   },
   {
     id: "narrative_card",
-    featureId: "2.3.12",
+    featureId: "2.5.13",
     name: "叙事卡助手",
     kind: "generator",
     status: "active",
@@ -196,7 +220,7 @@ export const ASSISTANT_SEATS: readonly SeatView[] = [
   },
   {
     id: "codex",
-    featureId: "2.3.13",
+    featureId: "2.5.14",
     name: "设定集助手",
     kind: "generator",
     status: "active",
@@ -209,7 +233,7 @@ export const ASSISTANT_SEATS: readonly SeatView[] = [
   },
   {
     id: "structure_check",
-    featureId: "2.3.14",
+    featureId: "2.5.15",
     name: "结构检查助手",
     kind: "validator",
     status: "active",
@@ -222,7 +246,7 @@ export const ASSISTANT_SEATS: readonly SeatView[] = [
   },
   {
     id: "content_check",
-    featureId: "2.3.15",
+    featureId: "2.5.16",
     name: "内容检查助手",
     kind: "validator",
     status: "active",
@@ -235,7 +259,7 @@ export const ASSISTANT_SEATS: readonly SeatView[] = [
   },
   {
     id: "deai",
-    featureId: "2.3.16",
+    featureId: "2.5.17",
     name: "去 AI 味助手",
     kind: "polisher",
     status: "active",
@@ -247,8 +271,19 @@ export const ASSISTANT_SEATS: readonly SeatView[] = [
     ],
   },
   {
+    id: "structure_optimize",
+    featureId: "2.5.18",
+    name: "结构优化助手",
+    kind: "generator",
+    status: "planned",
+    contentType: "structure-optimize",
+    pipelineRole: "manual",
+    filePrefixes: [],
+    bindings: [],
+  },
+  {
     id: "plot_refine",
-    featureId: "2.3.17",
+    featureId: "2.5.19",
     name: "情节优化助手",
     kind: "polisher",
     status: "active",
@@ -260,41 +295,28 @@ export const ASSISTANT_SEATS: readonly SeatView[] = [
     ],
   },
   {
-    id: "plot_polish",
-    featureId: "2.3.18",
-    name: "情节润色助手",
-    kind: "polisher",
-    status: "active",
-    contentType: "plot-polish",
-    pipelineRole: "attachable",
-    filePrefixes: ["11_"],
-    bindings: [
-      { scope: null, agentIds: ["plot_polish"] },
-    ],
-  },
-  {
     id: "playability",
-    featureId: "2.3.19",
+    featureId: "2.5.20",
     name: "玩法适配助手",
     kind: "polisher",
-    status: "planned",
+    status: "active",
     contentType: "playability",
-    pipelineRole: "manual",
+    pipelineRole: "attachable",
     filePrefixes: ["08_"],
-    bindings: [],
+    bindings: [
+      { scope: null, agentIds: ["playability_adapt"] },
+    ],
   },
   {
-    id: "encyclopedia",
-    featureId: "2.3.20",
-    name: "百科娘",
-    kind: "retriever",
-    status: "active",
-    contentType: "encyclopedia",
+    id: "narration",
+    featureId: "2.5.21",
+    name: "旁白解说助手",
+    kind: "polisher",
+    status: "planned",
+    contentType: "narration",
     pipelineRole: "manual",
-    filePrefixes: ["18_"],
-    bindings: [
-      { scope: null, agentIds: ["encyclopedia_retrieval"] },
-    ],
+    filePrefixes: [],
+    bindings: [],
   },
 ];
 
@@ -339,10 +361,10 @@ export const FILE_PREFIX_STEP: Readonly<Record<string, string>> = {
   "12_": "script_generation",
   "13_": "quest_generation",
   "14_": "scene_plan",
+  "11a_": "state_ledger",
   "20a_": "scene_evidence",
   "07a_": "structure_validation_l1",
   "08a_": "structure_validation_l2",
-  "11a_": "structure_validation_l3",
   "15_": "lore_generation",
   "17_": "narrative_card",
   "18_": "encyclopedia_retrieval",

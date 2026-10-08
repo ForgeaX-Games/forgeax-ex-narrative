@@ -1,5 +1,5 @@
 /**
- * structure-check.ts — 结构检查助手（席位 2.3.14）的独立席位实现
+ * structure-check.ts — 结构检查助手（席位 2.5.15）的独立席位实现
  *
  * ─────────────────────────────────────────────────────────────────
  * 与既有 structure-validation.ts 的分工
@@ -16,7 +16,7 @@
  * 为什么是确定性 agent 而非 LLM
  * ─────────────────────────────────────────────────────────────────
  * 分支是否配对、结局是否可达、单元长度是否失衡，都是图上的事实，不需要也不应该让模型猜。
- * 内容层面的"好不好"归内容检查助手（2.3.15），那才需要模型。
+ * 内容层面的"好不好"归内容检查助手（2.5.16），那才需要模型。
  */
 import type {
   BranchType,
@@ -28,6 +28,7 @@ import type {
   PlotNode,
   VnBranchedBeats,
 } from "../../types/index.js";
+import { toEdgeKind } from "../../types/index.js";
 import type { LLMClient } from "../runtime/llm-client.js";
 import { fullValidation } from "../../utils/connection-repair.js";
 import { checkNodeFunctions, type NodeFunctionIssue } from "../graph/node-function.js";
@@ -78,6 +79,8 @@ export interface LayerCheckResult {
   pacing: { issues: string[]; groupSizes: Record<string, number>; branchRatio: number };
   /** 节点功能位与条件完整性（声明与拓扑是否相符、该给条件的是否给了）。 */
   functions: { issues: NodeFunctionIssue[] };
+  /** 契约硬规则（编号律、场号同步律、假分支、糖葫芦串）。 */
+  contract: { issues: string[] };
 }
 
 export interface StructureCheckReport {
@@ -167,6 +170,14 @@ function layerFindings(layer: LayerCheckResult): QaFinding[] {
     ...layer.branchMergeErrors.map((m) => make("分支合并配对", "error", m, "topology")),
     ...layer.endings.issues.map((m) => make("结局设置", "warn", m, endingRepairKind(m))),
     ...layer.pacing.issues.map((m) => make("节奏设置", "warn", m, pacingRepairKind(m))),
+    /**
+     * 契约规则记 error，不是 warn。
+     *
+     * 其余几组问的是「这棵树好不好」，答案可以见仁见智，所以报警告让人判断。这组问的是
+     * 「它还算不算一棵合格的树」——编号乱序、假分支、糖葫芦串都不是风格选择，是缺陷。
+     * 记成警告的后果是它跟一堆"可以这样也可以那样"的提示混在一起，而它恰恰是那个必须动手的。
+     */
+    ...layer.contract.issues.map((m) => make("契约规则", "error", m, "topology")),
     ...layer.functions.issues.map((i) =>
       make("节点功能位", "warn", i.message, functionRepairKind(i.kind), i.nodeId),
     ),
@@ -228,13 +239,13 @@ function fromVnTree(tree: VnBranchedBeats): CheckNode[] {
       isBranch: next.length > 1,
       isEnding: b.is_ending,
       /**
-       * 影游的边原生就是「目标 + kind + label」，与通用 NodeEdge 同构，直接映射。
-       * 这正是把这套形制升为通用层的回报：归档产物与新产物走同一批检查规则。
-       * branch_qte 是已停用的互动形式，在通用层归入 choice。
+       * 影游的边原生就是「目标 + kind + label」，与通用 NodeEdge 同构，只需把词
+       * 换成契约三值。这正是把这套形制升为通用层的回报：归档产物与新产物走同一批
+       * 检查规则。
        */
       edges: rawEdges.map((e) => ({
         to: e.to,
-        kind: e.kind === "branch_qte" ? ("choice" as const) : e.kind,
+        kind: toEdgeKind(e.kind),
         label: e.label,
         condition: e.label
           ? { type: "choice" as const, description: `选择 ${e.label}` }
@@ -391,6 +402,131 @@ function checkPacing(nodes: CheckNode[]): LayerCheckResult["pacing"] {
   return { issues, groupSizes, branchRatio };
 }
 
+/**
+ * 契约硬规则 —— 这棵树符不符合「树」的形制规定。
+ *
+ * 与另两组检查问的是不同的问题：`checkEndings` 问结局设置对不对、`checkPacing` 问节奏匀
+ * 不匀，两者都还承认这是一棵合格的树。这里问的是它算不算一棵合格的树。
+ *
+ * 规则来自 §4.3 的编号律与外部提示词三版演进的踩坑史。**光靠提示词约束不够**是这组存在
+ * 的全部理由：提示词第三版拿了近半篇幅讲「分叉后不要一跳就合流」，说明那是模型的默认失败
+ * 模式 —— 反复叮嘱仍会犯的事，得有机械检查兜底。
+ */
+function checkContract(nodes: CheckNode[]): LayerCheckResult["contract"] {
+  const issues: string[] = [];
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+
+  // ── 编号律：id 按 DFS 序单调递增（§4.3）。乱序的树没法靠 id 判先后，
+  //    而下游的人工排查、日志对照、断点续跑都在靠 id 认位置。
+  const ordinals = nodes.map((n) => parseOrdinal(n.id));
+  if (ordinals.every((o) => o !== undefined)) {
+    // 只在**全部** id 都解析得出时才比：混着两种格式时比出来的先后没有意义，
+    // 而误报会把一份干净的报告判成 warn，让真问题淹在噪声里。
+    for (let i = 1; i < nodes.length; i++) {
+      if (compareOrdinal(ordinals[i]!, ordinals[i - 1]!) <= 0) {
+        issues.push(`节点编号未按 DFS 序递增：${nodes[i - 1]!.id} 之后是 ${nodes[i]!.id}`);
+        break; // 一条就够：乱序通常是整段乱，逐个报只是把同一件事说 n 遍
+      }
+    }
+  }
+
+  // ── 场号同步律：同一叙事单元的节点必须连续。分散成几段意味着 id 的场号与实际
+  //    归属对不上，而「场号 = id 前缀」是编号律的另一半。
+  const seenGroups = new Set<string>();
+  let lastGroup: string | undefined;
+  for (const n of nodes) {
+    if (!n.group) continue;
+    if (n.group !== lastGroup) {
+      if (seenGroups.has(n.group)) {
+        issues.push(`叙事单元 ${n.group} 的节点不连续：在 ${n.id} 处又出现一段`);
+        break;
+      }
+      seenGroups.add(n.group);
+      lastGroup = n.group;
+    }
+  }
+
+  for (const n of nodes) {
+    // ── 声明了结局却有出边。结局是「走到这里故事结束」，有后继就不是结局。
+    //    这条查的是声明与拓扑的矛盾：RPG 各层的 isEnding 由出度派生，恒不矛盾，
+    //    而 ending 字段（trigger / scope）是结构席显式给的，能与出边并存。
+    if ((n.endingTrigger !== undefined || n.endingScope !== undefined) && n.next.length > 0) {
+      issues.push(`节点 ${n.id} 标了结局（达成条件/作用域），却还有 ${n.next.length} 条出边`);
+    }
+
+    if (!n.isBranch) continue;
+
+    // ── 第一跳不可共用。几条边指向同一个目标是假分支：玩家选了，什么也没改变。
+    const targets = new Set(n.next);
+    if (targets.size < n.next.length) {
+      issues.push(`分支 ${n.id} 有多条出边指向同一节点：玩家选了但什么也没改变，是假分支`);
+    }
+
+  }
+
+  // ── 糖葫芦串：全树没有一个选择的影响能持续过一跳。
+  //
+  //    病态是**全树性质**，不是单点的。单个「分叉 → 各支一个节点 → 合并点」的菱形恰恰
+  //    是 `converge` 代价档的正常形态（路径不同、结果相同），`buildSkeleton` 的 shouldMerge
+  //    分支自己就生成这个形状。一处菱形报缺陷，等于把系统的标准骨架判成缺陷。
+  //
+  //    成「串」才是病：每一处分叉都在下一跳合流，于是玩家的任何决定都在一跳内被抹平，
+  //    整棵树是 ●-<>-●-<>-● 穿在一根签子上，宽度恒为二、深度上毫无分歧。所以判据是
+  //    「分叉不止一处，且无一例外」—— 只要有一处分支撑过两跳，树就有真正的分歧承载。
+  //
+  //    它与 `checkPacing` 的断头路检查正好相反：那边查收束得太晚，这边查收束得太早。
+  const branches = nodes.filter((n) => n.isBranch);
+  const oneHopMerges = branches.filter((n) => oneHopMergeTarget(n, byId) !== undefined);
+  if (branches.length >= 2 && oneHopMerges.length === branches.length) {
+    issues.push(
+      `${branches.length} 处分叉全部在一跳内合流（${oneHopMerges
+        .map((n) => n.id)
+        .join("、")}）：没有一个选择的影响能持续过一跳，整棵树是糖葫芦串`,
+    );
+  }
+
+  return { issues };
+}
+
+/**
+ * 这处分叉是不是「各支走一个节点就全汇到同一处」；是就返回那个汇合点。
+ *
+ * 直通结局的支不算 —— 那是 `terminal` 代价档（选错就完），它本来就不该汇回。
+ */
+function oneHopMergeTarget(
+  branch: CheckNode,
+  byId: Map<string, CheckNode>,
+): string | undefined {
+  const hops = [...new Set(branch.next)]
+    .map((id) => byId.get(id))
+    .filter((t): t is CheckNode => !!t);
+  if (hops.length < 2 || !hops.every((t) => !t.isEnding && t.next.length === 1)) return undefined;
+  const landings = new Set(hops.map((t) => t.next[0]!));
+  return landings.size === 1 ? [...landings][0] : undefined;
+}
+
+/**
+ * 把 `1_2` / `1.2` / `2_3_1` 这类层级编号解析成数值序。
+ *
+ * 解析不出来就给 undefined，由调用方决定跳过 —— 各层的 id 格式不统一（L1 是
+ * `场号_序号`，别处还有带前缀的），拿解析失败当错误报会把格式差异误判成乱序。
+ */
+function parseOrdinal(id: string): number[] | undefined {
+  const parts = id.split(/[._]/);
+  const nums = parts.map((p) => Number(p));
+  if (parts.length === 0 || nums.some((n) => !Number.isFinite(n))) return undefined;
+  return nums;
+}
+
+/** 层级编号的字典序比较：先比场号，同场比场内序号。 */
+function compareOrdinal(a: number[], b: number[]): number {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const d = (a[i] ?? -1) - (b[i] ?? -1);
+    if (d !== 0) return d;
+  }
+  return 0;
+}
+
 function checkLayer(
   layer: StructureLayer,
   label: string,
@@ -418,6 +554,7 @@ function checkLayer(
     endings: checkEndings(nodes),
     pacing: checkPacing(nodes),
     functions: { issues: checkNodeFunctions(nodes) },
+    contract: checkContract(nodes),
   };
 }
 
@@ -444,19 +581,17 @@ export function buildStructureCheckReport(ctx: NarrativeContext): StructureCheck
   const tree = ctx.vn_branched_beats;
   if (tree?.beats?.length) layers.push(checkLayer("VN", "剧情树", fromVnTree(tree)));
 
-  const errorCount = layers.reduce(
-    (n, l) => n + l.errors.length + l.cycles.length + l.branchMergeErrors.length,
-    0,
-  );
-  const warnCount = layers.reduce(
-    (n, l) =>
-      n +
-      l.warnings.length +
-      l.endings.issues.length +
-      l.pacing.issues.length +
-      l.functions.issues.length,
-    0,
-  );
+  /**
+   * 判定从 findings 算，不再手工枚举各分组。
+   *
+   * `layerFindings` 已经是每组严重性的唯一声明处；这里从前另外枚举一遍哪些组算硬错误、
+   * 哪些算警告，于是同一件事在两处各说一次。加一组检查要同时改两处，漏掉计数那处的后果
+   * 很安静：finding 老老实实标着 error，`verdict` 却仍是 warn —— 上游按 verdict 放行时
+   * 就把它放过去了。本轮加契约规则时正好撞上这一下。
+   */
+  const findings = layers.flatMap(layerFindings);
+  const errorCount = findings.filter((f) => f.severity === "error").length;
+  const warnCount = findings.filter((f) => f.severity === "warn").length;
 
   // 一层都没有时不能报 pass——那会让调用方以为结构没问题，其实是根本没结构
   const verdict: StructureCheckReport["verdict"] =
@@ -469,7 +604,7 @@ export function buildStructureCheckReport(ctx: NarrativeContext): StructureCheck
 
   return {
     layers,
-    findings: layers.flatMap(layerFindings),
+    findings,
     verdict,
     summary,
     checkedAt: new Date().toISOString(),

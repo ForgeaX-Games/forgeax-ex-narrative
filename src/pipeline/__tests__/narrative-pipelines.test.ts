@@ -186,25 +186,34 @@ describe("新架构四条叙事管线", () => {
     expect(expandPipelineSteps(narrative, { includePlanned: true })).not.toContain("script_generation");
   });
 
-  it("打磨三席默认不跑，勾选后紧跟情节席、排在质检之前", () => {
+  it("打磨三席默认不跑，勾选后各自紧跟它改的那一层", () => {
     for (const id of ["pl-narrative", "pl-film-game"] as const) {
       const p = NARRATIVE_PIPELINES[id];
-      expect(attachableSeatIds(p)).toEqual(["deai", "plot_refine", "plot_polish"]);
+      expect(attachableSeatIds(p)).toEqual(["playability", "deai", "plot_refine"]);
 
-      // 默认全关：三席都作用在情节层，全开等于情节生成完再过三轮 LLM。
+      // 默认全关：全开等于生成完再过三轮 LLM。
       const lean = expandPipelineSteps(p);
-      for (const step of ["deai_polish", "plot_refine", "plot_polish"]) {
+      for (const step of ["playability_adapt", "deai_polish", "plot_refine"]) {
         expect(lean, `${id} 默认步序不该带 ${step}`).not.toContain(step);
       }
 
       const activated = expandPipelineSteps(p, {
-        activateOptionalSeats: ["deai", "plot_refine", "plot_polish"],
+        activateOptionalSeats: ["playability", "deai", "plot_refine"],
       });
-      // 顺序是这条测试的全部意义：打磨改的是情节，而质检该看作者最终要的那一版。
+      // 顺序是这条测试的全部意义。前三席改情节正文，所以紧跟情节席、排在质检之前
+      // ——质检该看作者最终要的那一版。
       expect(activated.indexOf("plot_generation")).toBeLessThan(activated.indexOf("deai_polish"));
-      expect(activated.indexOf("plot_polish")).toBeLessThan(activated.indexOf("structure_check"));
-      expect(activated.slice(activated.indexOf("plot_generation") + 1, activated.indexOf("plot_polish") + 1))
-        .toEqual(["deai_polish", "plot_refine", "plot_polish"]);
+      expect(activated.indexOf("plot_refine")).toBeLessThan(activated.indexOf("structure_check"));
+      // 账本（情节席的第二个实现）排在打磨之前：打磨席明令只改文字、不改事件，
+      // 而账本记的是事件层的状态（谁在哪、拿了什么），打磨前后应当一致。顺带让
+      // 打磨席自己也能引用精确状态。
+      expect(activated.slice(activated.indexOf("plot_generation") + 1, activated.indexOf("plot_refine") + 1))
+        .toEqual(["state_ledger", "deai_polish", "plot_refine"]);
+
+      // 玩法适配改的是细纲，所以排在**情节席之前**：它动完选项，情节才照着写正文。
+      // 挂到情节后面会让它去改一份情节已经照着写完了的细纲，改了也没人再读。
+      expect(activated.indexOf("detailed_outline")).toBeLessThan(activated.indexOf("playability_adapt"));
+      expect(activated.indexOf("playability_adapt")).toBeLessThan(activated.indexOf("plot_generation"));
     }
   });
 
@@ -214,7 +223,7 @@ describe("新架构四条叙事管线", () => {
     });
     expect(steps).toContain("plot_refine");
     expect(steps).not.toContain("deai_polish");
-    expect(steps).not.toContain("plot_polish");
+    expect(steps).not.toContain("deai_polish");
   });
 
   it("可挂载席不占 CSV 步序：seats 与 csvStages 的对应关系不受它们影响", () => {

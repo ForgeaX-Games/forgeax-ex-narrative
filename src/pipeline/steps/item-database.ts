@@ -43,7 +43,7 @@ export const ITEM_DATABASE_COMPOSER: PromptComposer = {
     context_inputs: (ctx: NarrativeContext): string => buildUserPrompt(ctx),
     user_instructions: (ctx: NarrativeContext): string => userInstructionsBlock(ctx),
   },
-  systemBlockOrder: ["role", "task_spec", "ip_dna", "style_guide", "constraints", "cot", "ip_source", "output_schema"],
+  systemBlockOrder: ["role", "task_spec", "style_guide", "ip_dna", "constraints", "cot", "ip_source", "output_schema"],
   // user 段必须挂在 composer 上而不是由 step 函数手拼：runner 只认 composer 解析出的
   // 提示词，user 段留空就等于让模型在没有世界观/角色/框架的情况下凭空编道具，
   // 而且不报错。用户修改意见同理——它原来靠 appendUserInstructions 事后追加，

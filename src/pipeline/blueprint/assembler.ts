@@ -26,11 +26,13 @@ import { PromptResolver } from "./prompt-resolver.js";
 import { getStepSkill } from "../../knowledge/game-narrative/skill-loader.js";
 import { findGenreByCode } from "../../knowledge/genre-taxonomy.js";
 import { getModeConfig } from "../routing/modes.js";
+import { DEFAULT_COMPLEXITY_TIER, normalizedComplexity } from "../runtime/layer-threshold-config.js";
 
 export interface AssemblerInput {
   genreCode: string;
   mode: ModeId;
   tier: TierId;
+  /** 叙事体量档位（1-5 整数枚举，与 COMPLEXITY_NODE_BUDGET 同一口径），不是 0-1 归一值。 */
   complexity?: number;
   /** 直接提供步骤序列（跳过选步）；用于 resume/rerun */
   overrideSteps?: string[];
@@ -45,7 +47,7 @@ export interface AssemblerInput {
  * @returns 不可变的 PipelineBlueprint
  */
 export function assembleBlueprint(input: AssemblerInput): PipelineBlueprint {
-  const { genreCode, mode, tier, complexity = 0.5 } = input;
+  const { genreCode, mode, tier, complexity = DEFAULT_COMPLEXITY_TIER } = input;
 
   // ────── Step 1: 确定步骤序列 ──────
 
@@ -208,11 +210,14 @@ function bridgeStepDescriptorToAgentDef(
 }
 
 /**
- * 根据 complexity 微调 temperature。
- * complexity 高 → temperature 略低（更保守）；complexity 低 → 略高（更创意）。
+ * 根据体量档位微调 temperature。
+ * 档位高 → temperature 略低（更保守）；档位低 → 略高（更创意）。
+ *
+ * 入参是 1-5 档位，本函数内部换算成 0-1 才能用 —— 从前这里直接拿档位当 0-1 算，
+ * 标准档（3）算出 base-0.5，实际把所有中高体量的 temperature 打到了地板。
  */
 function scaleTemperature(base: number, complexity: number): number {
-  const adjustment = (0.5 - complexity) * 0.2;
+  const adjustment = (0.5 - normalizedComplexity(complexity)) * 0.2;
   return Math.max(0, Math.min(1.5, base + adjustment));
 }
 

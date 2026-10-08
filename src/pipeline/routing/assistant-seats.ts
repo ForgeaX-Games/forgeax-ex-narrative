@@ -32,7 +32,7 @@
  * ─────────────────────────────────────────────────────────────────
  * 硬不变量（测试守）
  * ─────────────────────────────────────────────────────────────────
- *   1. 20 席与编号 2.3.1–2.3.20 一一对应，featureId 唯一
+ *   1. 20 席与编号 2.5.2–2.5.1 一一对应，featureId 唯一
  *   2. 每个已注册 step 必须且只能归属一个席位——不允许孤儿 step
  *   3. status=active 的席位至少有一条绑定；status=planned 的必须没有绑定
  */
@@ -45,14 +45,31 @@ import type { PipelineTemplateId } from "./templates.js";
 // ════════════════════════════════════════════════════════
 
 /**
- * 席位四类。决定执行器形态与产物写回方式，是 kind 专属字段的判别标签。
+ * 席位五类。决定执行器形态与产物写回方式，是 kind 专属字段的判别标签。
  *
- *   generator  产出新产物，写 ctx 主字段（13 席，管线主干）
- *   validator  读已有产物 → 出检查报告，可选自动修正后回写（2 席）
- *   polisher   读已有产物 → **另存打磨分支**，主产物不动，由用户选哪版进下游（4 席）
- *   retriever  检索本地/网络资料 → 产出可检索文档，供其余席位引用（1 席）
+ *   generator    产出新产物，写 ctx 主字段（13 席，管线主干）
+ *   validator    读已有产物 → 出检查报告，可选自动修正后回写（2 席）
+ *   polisher     读已有产物 → **另存打磨分支**，主产物不动，由用户选哪版进下游（4 席）
+ *   retriever    检索本地/网络资料 → 产出可检索文档，供其余席位引用（1 席）
+ *   coordinator  把用户输入与四轴配置组织成下游可用的形状，**不落叙事产物**
+ *
+ * 前四类都以"产出哪一类叙事产物"为身份，所以 `contentType` 必然非空。协调席是唯一
+ * 不产叙事产物的一类：它的成果是一份配置，进的是运行清单而不是内容库。这条分界让
+ * "`contentType` 为 null"从一个说不清的例外变成协调席的定义性特征 —— 契约自检因此
+ * 能两向都判（见 `assertSeatContractComplete`）。
+ *
+ * 用常量数组而不是直接写 union：`seats-projection.ts` 要把这套词渲染进前端模块源码，
+ * 而类型在运行时不存在。从前那边手抄了一份同样的 union，后端加一档它不会跟着变。
  */
-export type SeatKind = "generator" | "validator" | "polisher" | "retriever";
+export const SEAT_KINDS = [
+  "generator",
+  "validator",
+  "polisher",
+  "retriever",
+  "coordinator",
+] as const;
+
+export type SeatKind = (typeof SEAT_KINDS)[number];
 
 /**
  * 单独调用这一席时，上游产物是软输入还是硬门槛。
@@ -153,6 +170,21 @@ export interface AssistantSeat {
    */
   derivedArtifacts?: string[];
 
+  /**
+   * 本席主实现的派生子步：跟着主实现一起跑，但不代表这一席。
+   *
+   * 与 `bindings` 里多列一个 agentId 的差别是**它说得出关系**。都塞进 agentIds 时，
+   * "谁是这一席、谁是它的派生物"只能靠数组顺序猜；而"单独调这一席跑什么"要答得准，
+   * 猜不行——情节席单独调应该跑情节生成，不该跑它的账本。
+   *
+   * 与 `alsoOwns` 的差别是它**真的会跑**：alsoOwns 只为让"每个 step 都有主人"成立，
+   * 不进任何步序。
+   *
+   * 本席被 `coveredBy` 覆盖（产物由另一席顺带产出）时派生子步也不跑——主实现都没跑，
+   * 派生物无从派生。
+   */
+  derivedAgents?: string[];
+
   /** 实现绑定；planned 席位为空数组。 */
   bindings: SeatBinding[];
   /**
@@ -183,15 +215,59 @@ export interface AssistantSeat {
 /**
  * 席位与 step 的对应按**职责**判定，不按历史命名。两处刻意与旧绑定不同：
  *
- *   - 故事大纲席（2.3.7）= 宏观框架 → jrpg story_framework / vn vn_outline_acts；
+ *   - 故事大纲席（2.5.8）= 宏观框架 → jrpg story_framework / vn vn_outline_acts；
  *     旧前端把它接到 outline_batch（L1 故事大纲），是被 step 中文名带偏了。
- *   - 分镜席（2.3.11）vn 侧 = vn_storyboard（G-03 分镜设计），
+ *   - 分镜席（2.5.12）vn 侧 = vn_storyboard（G-03 分镜设计），
  *     而 vn_screenplay（G-02 剧本创作）属于故事情节席——「填充剧情树内容」。
  */
 export const ASSISTANT_SEATS: readonly AssistantSeat[] = [
   {
+    id: "entry_config",
+    featureId: "2.5.0",
+    name: "叙事生成配置助手",
+    /**
+     * 全表唯一的协调席。它的成果是一份配置 —— 需求、四轴、体量、管线编排，进的是运行
+     * 清单而不是内容库，所以 `contentType` 为 null（见 `SeatKind` 的 coordinator 一档）。
+     *
+     * 归为 generator 会逼它编一个产物类别，而那个类别下永远不会有文件。
+     */
+    kind: "coordinator",
+    responsibility: "将入口节点以助手的方式常驻，用以总起和统领整个任务和管线。",
+    /**
+     * planned：入口的**功能**早已在跑（需求输入、四轴选择、体量档位、管线编排都在
+     * 画布的入口节点上），但它还不是一席"助手" —— 没有自己的 step、提示词与产物。
+     * v4 §2.5.0 要的是把它做成常驻助手，那是一份实现工作，不是把现有 UI 改个名。
+     *
+     * 所以这里只立契约：前端据此可拖可 @、不可单跑。按 planned 席的规矩不声明
+     * runPolicy 与上下游 —— 还没有实现可谈起跑。
+     */
+    status: "planned",
+    upstreamSeats: [],
+    contentType: null,
+    bindings: [],
+  },
+  {
+    id: "encyclopedia",
+    featureId: "2.5.1",
+    name: "百科娘",
+    kind: "retriever",
+    responsibility:
+      "对用户想要体验的目标，无论是某一作品，抑或是相关历史事实，" +
+      "都能够从本地或者网上检索、对比、分析，得出准确信息和设定。",
+    status: "active",
+    runPolicy: "independent",
+    upstreamSeats: [],
+    contentType: "encyclopedia",
+    retrieval: { sources: ["local", "web"], outputField: "encyclopedia_doc" },
+    /**
+     * 通用绑定、无作用域：本席检索的是外部资料，与品类/模板无关，任何管线都能挂。
+     * 它不在四条席位管线的默认步序里——按需单独跑（自由编排拖它，或 2.4.2 蒸馏调它）。
+     */
+    bindings: [{ agentIds: ["encyclopedia_retrieval"] }],
+  },
+  {
     id: "req_list",
-    featureId: "2.3.1",
+    featureId: "2.5.2",
     name: "需求清单助手",
     kind: "generator",
     responsibility:
@@ -215,7 +291,7 @@ export const ASSISTANT_SEATS: readonly AssistantSeat[] = [
   },
   {
     id: "design_doc",
-    featureId: "2.3.2",
+    featureId: "2.5.3",
     name: "策划文档助手",
     kind: "generator",
     responsibility:
@@ -249,7 +325,7 @@ export const ASSISTANT_SEATS: readonly AssistantSeat[] = [
   },
   {
     id: "worldview",
-    featureId: "2.3.3",
+    featureId: "2.5.4",
     name: "世界观设定助手",
     kind: "generator",
     responsibility:
@@ -264,7 +340,7 @@ export const ASSISTANT_SEATS: readonly AssistantSeat[] = [
   },
   {
     id: "character",
-    featureId: "2.3.4",
+    featureId: "2.5.5",
     name: "角色档案助手",
     kind: "generator",
     responsibility:
@@ -278,7 +354,7 @@ export const ASSISTANT_SEATS: readonly AssistantSeat[] = [
   },
   {
     id: "item",
-    featureId: "2.3.5",
+    featureId: "2.5.6",
     name: "道具清单助手",
     kind: "generator",
     responsibility:
@@ -293,7 +369,7 @@ export const ASSISTANT_SEATS: readonly AssistantSeat[] = [
   },
   {
     id: "scene_list",
-    featureId: "2.3.6",
+    featureId: "2.5.7",
     name: "场景列表助手",
     kind: "generator",
     responsibility:
@@ -317,7 +393,7 @@ export const ASSISTANT_SEATS: readonly AssistantSeat[] = [
   },
   {
     id: "outline",
-    featureId: "2.3.7",
+    featureId: "2.5.8",
     name: "故事大纲助手",
     kind: "generator",
     responsibility:
@@ -337,7 +413,7 @@ export const ASSISTANT_SEATS: readonly AssistantSeat[] = [
   },
   {
     id: "structure",
-    featureId: "2.3.8",
+    featureId: "2.5.9",
     name: "故事结构助手",
     kind: "generator",
     responsibility:
@@ -361,7 +437,7 @@ export const ASSISTANT_SEATS: readonly AssistantSeat[] = [
   },
   {
     id: "plot",
-    featureId: "2.3.9",
+    featureId: "2.5.10",
     name: "故事情节助手",
     kind: "generator",
     responsibility:
@@ -371,6 +447,12 @@ export const ASSISTANT_SEATS: readonly AssistantSeat[] = [
     runPolicy: "requires-upstream",
     upstreamSeats: ["structure"],
     contentType: "plot",
+    /**
+     * 账本折的就是本席节点声明的状态变更，所以归本席；独立成一步是因为情节生成分批
+     * 并发，每批只看得见自己那几个节点，而账本要全树——排在生成之后，它才第一次有
+     * 全树可看。
+     */
+    derivedAgents: ["state_ledger"],
     bindings: [
       { agentIds: ["plot_generation"] },
       // C2（2026-08）已封存：tpl-vn 的 dialogue_script 绑定随实现本体搬进
@@ -383,7 +465,7 @@ export const ASSISTANT_SEATS: readonly AssistantSeat[] = [
   },
   {
     id: "quest",
-    featureId: "2.3.10",
+    featureId: "2.5.11",
     name: "任务助手",
     kind: "generator",
     responsibility:
@@ -397,7 +479,7 @@ export const ASSISTANT_SEATS: readonly AssistantSeat[] = [
   },
   {
     id: "storyboard",
-    featureId: "2.3.11",
+    featureId: "2.5.12",
     name: "分镜助手",
     kind: "generator",
     responsibility: "根据故事情节，规划剧本分镜，设置剧情表演的美术效果。",
@@ -415,7 +497,7 @@ export const ASSISTANT_SEATS: readonly AssistantSeat[] = [
   },
   {
     id: "narrative_card",
-    featureId: "2.3.12",
+    featureId: "2.5.13",
     name: "叙事卡助手",
     kind: "generator",
     responsibility: "根据用户初始需求，对叙事要求极低的游戏品类直接进行叙事包装。",
@@ -427,7 +509,7 @@ export const ASSISTANT_SEATS: readonly AssistantSeat[] = [
   },
   {
     id: "codex",
-    featureId: "2.3.13",
+    featureId: "2.5.14",
     name: "设定集助手",
     kind: "generator",
     responsibility: "根据用户初始需求，对叙事要求较低的游戏品类直接进行叙事包装。",
@@ -444,7 +526,7 @@ export const ASSISTANT_SEATS: readonly AssistantSeat[] = [
   },
   {
     id: "structure_check",
-    featureId: "2.3.14",
+    featureId: "2.5.15",
     name: "结构检查助手",
     kind: "validator",
     responsibility:
@@ -465,7 +547,7 @@ export const ASSISTANT_SEATS: readonly AssistantSeat[] = [
   },
   {
     id: "content_check",
-    featureId: "2.3.15",
+    featureId: "2.5.16",
     name: "内容检查助手",
     kind: "validator",
     responsibility:
@@ -499,7 +581,7 @@ export const ASSISTANT_SEATS: readonly AssistantSeat[] = [
   },
   {
     id: "deai",
-    featureId: "2.3.16",
+    featureId: "2.5.17",
     name: "去 AI 味助手",
     kind: "polisher",
     responsibility: "优化表达人机感并修正。",
@@ -511,8 +593,38 @@ export const ASSISTANT_SEATS: readonly AssistantSeat[] = [
     bindings: [{ agentIds: ["deai_polish"] }],
   },
   {
+    id: "structure_optimize",
+    featureId: "2.5.18",
+    name: "结构优化助手",
+    /**
+     * generator，不是 polisher —— 这一条是本席存在的全部理由。
+     *
+     * v4 §2.5.18 的职责含「对节点的增删改查」，那是改图。而打磨席的契约明令只许改文字、
+     * 不许改图（`polish-family.ts` 开头那段：拓扑是结构席的产出，下游任务/分镜/场景都按
+     * 它对齐，一个打磨步顺手改了 next_node 会让整条下游对不上，且没有任何一步会报错）。
+     *
+     * 所以它不能挂在打磨机制上复用，得新建：同样读已有结构、同样写回结构，但允许重排
+     * 拓扑，因此产物要过结构检查那一关，而打磨席的产物不必。
+     */
+    kind: "generator",
+    responsibility:
+      "优化生成的故事结构，在原有结构上对结构进行合理调整，包括对节点的增删改查。",
+    status: "planned",
+    upstreamSeats: [],
+    contentType: "structure-optimize",
+    bindings: [],
+  },
+  {
     id: "plot_refine",
-    featureId: "2.3.17",
+    /**
+     * 本席现在同时管内容与表达两层。情节润色助手（旧 `plot_polish`）已退役，职责按
+     * v4 §2.5.19 的职责原文第二句并进来 —— 主表上本就只有这一行，两席是实现史的产物。
+     *
+     * 合并有个代价要照看：两层的自检标准原本互斥（优化席允许补内容，润色席要求事实
+     * 一条不变）。所以提示词把它们排成先后两遍，而不是并列六条 —— 内容没到位就去雕
+     * 句子，雕的是还会被改掉的那一版。
+     */
+    featureId: "2.5.19",
     name: "情节优化助手",
     kind: "polisher",
     responsibility: "优化生成的情节的人物刻画、剧情推进和环境描写。",
@@ -524,61 +636,50 @@ export const ASSISTANT_SEATS: readonly AssistantSeat[] = [
     bindings: [{ agentIds: ["plot_refine"] }],
   },
   {
-    id: "plot_polish",
-    featureId: "2.3.18",
-    name: "情节润色助手",
-    kind: "polisher",
-    responsibility: "优化生成的情节的表达方式和表现手法，包括：情感渲染。",
-    status: "active",
-    runPolicy: "requires-upstream",
-    upstreamSeats: ["plot"],
-    contentType: "plot-polish",
-    branch: { baseField: "plots_generated" },
-    bindings: [{ agentIds: ["plot_polish"] }],
-  },
-  {
     id: "playability",
-    featureId: "2.3.19",
+    featureId: "2.5.20",
     name: "玩法适配助手",
     kind: "polisher",
     responsibility:
       "优化生成的分支剧情与选项之间的可玩度，例如让选项变得有意义，" +
       "分支能够真正起到推进剧情的作用。",
     /**
-     * 暂不接线（产品决定）：玩法适配要动的是"分支值不值得存在"这类判断，
-     * 而这轮的上下游口径（结构席产出什么、可玩度按什么打分）还没定。
-     * 契约先立在这里，实现 `playability_adapt` 已写好但不解析、不进任何管线，
-     * 因此 `status: "planned"` 且不声明 runPolicy 与上下游——planned 席谈起跑没有意义。
+     * 转 active（v4 §2.5.20）。此前标 planned 的理由是"上下游口径未定"，而 v4 主表把
+     * 职责定死成「让选项变得有意义、分支能真正推进剧情」—— 那是结构层的事，上游就是
+     * 结构席，实现 `playability_adapt` 原位改写的也正是它的产物。口径已定，不必再挂在
+     * `alsoOwns` 里靠"每个 step 都有主人"那条不变量保着。
+     *
+     * 上游是 `structure` 而不是 `plot`：另外三席打磨的是情节正文（`plots_generated`），
+     * 本席动的是细纲里"玩家做的选择意味着什么"，基准字段是 `detailed_outlines_generated`。
+     * 挂载点也跟着在结构席之后（见 `POLISH_ATTACHABLE`）—— 挂在情节席后面会让它去改一份
+     * 情节已经照着写完了的细纲，改了也没人再读。
      */
-    status: "planned",
-    upstreamSeats: [],
+    status: "active",
+    runPolicy: "requires-upstream",
+    upstreamSeats: ["structure"],
     contentType: "playability",
     branch: { baseField: "detailed_outlines_generated" },
-    bindings: [],
-    /**
-     * 写好但不接线的实现放 alsoOwns，让「每个已注册 step 都有主人」这条不变量
-     * 继续成立——否则 playability_adapt 会变成孤儿 step 而被契约测试拦下。
-     */
-    alsoOwns: ["playability_adapt"],
+    bindings: [{ agentIds: ["playability_adapt"] }],
   },
   {
-    id: "encyclopedia",
-    featureId: "2.3.20",
-    name: "百科娘",
-    kind: "retriever",
-    responsibility:
-      "对用户想要体验的目标，无论是某一作品，抑或是相关历史事实，" +
-      "都能够从本地或者网上检索、对比、分析，得出准确信息和设定。",
-    status: "active",
-    runPolicy: "independent",
-    upstreamSeats: [],
-    contentType: "encyclopedia",
-    retrieval: { sources: ["local", "web"], outputField: "encyclopedia_doc" },
+    id: "narration",
+    featureId: "2.5.21",
+    name: "旁白解说助手",
     /**
-     * 通用绑定、无作用域：本席检索的是外部资料，与品类/模板无关，任何管线都能挂。
-     * 它不在四条席位管线的默认步序里——按需单独跑（自由编排拖它，或 2.4.2 蒸馏调它）。
+     * polisher：它改的是同一份情节的叙述口吻，进去一份正文、出来还是那一份正文的新一版，
+     * 所以原位写回 `plots_generated`，与另外四席共用打磨机制。
+     *
+     * 与去 AI 味（2.5.17）的差别在改什么：那一席去的是机器腔，本席调的是"谁在讲这个
+     * 故事" —— 旁白解说驱动型叙事（解说体、纪录片式、第二人称）靠的是叙述者的存在感，
+     * 而那与句子像不像人写的是两件事。
      */
-    bindings: [{ agentIds: ["encyclopedia_retrieval"] }],
+    kind: "polisher",
+    responsibility: "对于旁白解说驱动型叙事进行故事风格的优化。",
+    status: "planned",
+    upstreamSeats: [],
+    contentType: "narration",
+    branch: { baseField: "plots_generated" },
+    bindings: [],
   },
 ] as const;
 
@@ -667,14 +768,30 @@ export function resolveSeatAgents(seatId: string, scope: SeatScope = {}): string
 
   if (scope.modeId) {
     const byMode = pick((b) => b.modeId === scope.modeId);
-    if (byMode) return [...byMode.agentIds];
+    if (byMode) return withDerived(seat, [...byMode.agentIds]);
   }
   if (scope.templateId) {
     const byTemplate = pick((b) => b.templateId === scope.templateId);
-    if (byTemplate) return [...byTemplate.agentIds];
+    if (byTemplate) return withDerived(seat, [...byTemplate.agentIds]);
   }
   const generic = pick((b) => !b.templateId && !b.modeId);
-  return generic ? [...generic.agentIds] : [];
+  const agentIds = generic ? [...generic.agentIds] : [];
+  return withDerived(seat, agentIds);
+}
+
+/**
+ * 派生子步接在主实现之后。主实现一个都没解析到时（coveredBy 或该品类不设此席）
+ * 不追加：主实现没跑，派生物无从派生。
+ */
+function withDerived(seat: AssistantSeat, agentIds: string[]): string[] {
+  if (agentIds.length === 0 || !seat.derivedAgents?.length) return agentIds;
+  return [...agentIds, ...seat.derivedAgents];
+}
+
+/** 本席的主实现（不含派生子步）；用于回答"单独调这一席跑什么"。 */
+export function resolveSeatPrimaryAgents(seatId: string, scope: SeatScope = {}): string[] {
+  const derived = new Set(SEAT_INDEX.get(seatId)?.derivedAgents ?? []);
+  return resolveSeatAgents(seatId, scope).filter((id) => !derived.has(id));
 }
 
 /** 本席在该作用域下由哪一席顺带产出；没有则返回 undefined。 */
@@ -695,6 +812,7 @@ const AGENT_TO_SEAT: ReadonlyMap<string, string> = (() => {
   for (const seat of ASSISTANT_SEATS) {
     const owned = [
       ...seat.bindings.flatMap((b) => b.agentIds),
+      ...(seat.derivedAgents ?? []),
       ...(seat.alsoOwns ?? []),
     ];
     for (const agentId of owned) {
@@ -714,7 +832,7 @@ export function getSeatForAgent(agentId: string): AssistantSeat | undefined {
  * 前端单跑一个助手时据此提示「还缺什么」。
  */
 export function resolveSeatRequiredFields(seatId: string, scope: SeatScope = {}): string[] {
-  const [first] = resolveSeatAgents(seatId, scope);
+  const [first] = resolveSeatPrimaryAgents(seatId, scope);
   return first ? getStepRequiredInputs(first) : [];
 }
 
@@ -726,12 +844,19 @@ export function boundAgentIds(): string[] {
 /**
  * 契约自检：kind 专属字段齐全、状态与绑定自洽。
  * 抛错即表示席位声明本身不成立，应在启动/测试期暴露而非运行期。
+ *
+ * 收一个 seats 参数（缺省为全表），好让每条规则本身可以被单独验证。从前它只读全表，
+ * 于是"规则写对了没有"无从回答：全表恰好合规时，一条写错方向的规则与一条正确的规则
+ * 同样是绿的。加规则最怕的就是这个 —— 规则看着对、实际什么也没判。
  */
-export function assertSeatContractComplete(): void {
+export function assertSeatContractComplete(
+  seats: readonly AssistantSeat[] = ASSISTANT_SEATS,
+): void {
   const problems: string[] = [];
   const seenFeatureIds = new Set<string>();
+  const index = new Set(seats.map((s) => s.id));
 
-  for (const seat of ASSISTANT_SEATS) {
+  for (const seat of seats) {
     if (seenFeatureIds.has(seat.featureId)) {
       problems.push(`${seat.id}: featureId ${seat.featureId} 重复`);
     }
@@ -765,6 +890,18 @@ export function assertSeatContractComplete(): void {
     if (seat.kind === "retriever" && !seat.retrieval) {
       problems.push(`${seat.id}: retriever 席位缺 retrieval 字段`);
     }
+    // contentType 两向都判。协调席的成果是一份配置，进运行清单、不进内容库，所以
+    // 必须为 null；其余四类都以"产出哪一类叙事产物"为身份，缺了这一项就没有身份，
+    // 而后果很安静：产物落盘后掉进"无类别"堆，两库都归不进去。
+    if (seat.kind === "coordinator" && seat.contentType !== null) {
+      problems.push(`${seat.id}: coordinator 席不落叙事产物，contentType 必须为 null`);
+    }
+    if (seat.kind !== "coordinator" && seat.contentType === null) {
+      problems.push(`${seat.id}: ${seat.kind} 席必须声明 contentType（无产物类别只属于协调席）`);
+    }
+    if (seat.kind === "coordinator" && (seat.report || seat.branch || seat.retrieval)) {
+      problems.push(`${seat.id}: coordinator 席不该带其他 kind 的专属字段`);
+    }
     for (const binding of seat.bindings) {
       // 空 agentIds 只在「产物由他席顺带产出」时合法，且必须指名是哪一席——
       // 否则就是接线漏了，而不是有意合并实现
@@ -775,7 +912,7 @@ export function assertSeatContractComplete(): void {
         if (binding.agentIds.length > 0) {
           problems.push(`${seat.id}: coveredBy 绑定不该同时给 agentIds（既合并又独立跑，产物会打架）`);
         }
-        if (!SEAT_INDEX.has(binding.coveredBy)) {
+        if (!index.has(binding.coveredBy)) {
           problems.push(`${seat.id}: coveredBy 指向不存在的席位 ${binding.coveredBy}`);
         }
       }

@@ -28,16 +28,23 @@ describe("剧情树落盘归一化", () => {
     expect(f.get("n4")!.node_function).toBe("ending");
   });
 
-  it("分岔的出边标 choice 并带 A/B 标签", () => {
+  it("分岔的出边标 choose 并带 A/B 标签", () => {
     const edges = deriveTreeFields(DIAMOND).get("n1")!.edges;
-    expect(edges.map((e) => e.kind)).toEqual(["choice", "choice"]);
+    expect(edges.map((e) => e.kind)).toEqual(["choose", "choose"]);
     expect(edges.map((e) => e.label)).toEqual(["A", "B"]);
   });
 
-  it("汇回的边标 merge_back，进结局的边标 ending", () => {
+  /**
+   * 结局性不再由边来说 —— 它是目标节点的出度，读者手上有整张图就能看出来。
+   * 从前的第四档 `ending` 逼着派生定一个优先级，而两种优先级各丢一半信息
+   * （见 NodeEdge.kind）。n3 → n4 是单线推进，就记 continue。
+   */
+  it("汇回的边标 merge；进结局的边只说走法，不兼职说结局", () => {
     const f = deriveTreeFields(DIAMOND);
-    expect(f.get("n2a")!.edges[0]!.kind).toBe("merge_back");
-    expect(f.get("n3")!.edges[0]!.kind).toBe("ending");
+    expect(f.get("n2a")!.edges[0]!.kind).toBe("merge");
+    expect(f.get("n3")!.edges[0]!.kind).toBe("continue");
+    // 结局这件事仍然读得出来，从节点功能位读。
+    expect(f.get("n4")!.node_function).toBe("ending");
   });
 
   it("一步汇合判 converge，直接进结局判 terminal，各走各的判 diverge", () => {

@@ -225,13 +225,30 @@ function NarrativeCanvasInner() {
   const prevPipelineStatusRef = useRef(pipelineStatus);
   const prevActiveStepRef = useRef<string | null>(null);
   const activeStepId = useNarrativeStore((s) => s.focusedStepId);
+  const focusedChildNodeId = useNarrativeStore((s) => s.focusedChildNodeId);
 
   const adaptiveZoom = useCallback((nodeCount: number) => {
     return Math.max(0.5, Math.min(1.0, 1.0 - (nodeCount - 5) * 0.015));
   }, []);
 
-  const resolveActiveNodeId = useCallback((stepId: string | null): string | null => {
+  /**
+   * 镜头要对准谁：有具体节点就对准那个节点，没有才退回整个步骤。
+   *
+   * 「定位到步骤」在只有三五个节点时够用，剧情树长到几十个节点之后就不够了——
+   * 镜头停在容器上，用户还得自己在里面找那一个节点。裸 node_id 在图上对应
+   * `<容器>__<node_id>`，但容器前缀随步骤变，所以按 `data.nodeId` 找而不是拼 id。
+   */
+  const resolveActiveNodeId = useCallback((
+    stepId: string | null,
+    childNodeId: string | null,
+  ): string | null => {
     if (!stepId) return null;
+    if (childNodeId) {
+      const child = layoutNodes.find(
+        (n) => n.type === "storyChild" && (n.data as { nodeId?: string } | undefined)?.nodeId === childNodeId,
+      );
+      if (child) return child.id;
+    }
     if (layoutNodes.some((n) => n.id === stepId)) return stepId;
     // legacy「任务+场景」合并 step 在图上是两个合成节点，镜头对准场景那半边。
     if (stepId === "script_scene_generation" && layoutNodes.some((n) => n.id === "qsg::scene")) {
@@ -242,10 +259,9 @@ function NarrativeCanvasInner() {
 
   const trackCurrentStep = useCallback(() => {
     if (cameraModeRef.current !== "tracking") return;
-    const resolvedId = resolveActiveNodeId(activeStepId);
-    const runningNode = layoutNodes.find((n) =>
-      n.type !== "storyChild" && n.id === resolvedId,
-    );
+    const resolvedId = resolveActiveNodeId(activeStepId, focusedChildNodeId);
+    // 解析出来的就是要对准的那一个，不再按类型筛——它可能正是一个 storyChild。
+    const runningNode = layoutNodes.find((n) => n.id === resolvedId);
     const targetNode = runningNode ?? layoutNodes.filter((n) =>
       n.type !== "storyChild" && !n.parentNode,
     ).pop();
@@ -281,7 +297,15 @@ function NarrativeCanvasInner() {
     programMoveRef.current = true;
     setCenter(centerX, nodeY, { zoom, duration: 500 });
     setTimeout(() => { programMoveRef.current = false; }, 600);
-  }, [layoutNodes, activeStepId, getViewport, setCenter, adaptiveZoom, resolveActiveNodeId]);
+  }, [
+    layoutNodes,
+    activeStepId,
+    focusedChildNodeId,
+    getViewport,
+    setCenter,
+    adaptiveZoom,
+    resolveActiveNodeId,
+  ]);
 
   useEffect(() => {
     setNodes(layoutNodes);
@@ -336,7 +360,7 @@ function NarrativeCanvasInner() {
       prevActiveStepRef.current = activeStepId;
 
       if (stepChanged && prevStepId) {
-        const resolvedPrev = resolveActiveNodeId(prevStepId);
+        const resolvedPrev = resolveActiveNodeId(prevStepId, null);
         const prevNode = layoutNodes.find((n) => n.id === resolvedPrev && !n.parentNode);
         if (prevNode) {
           const childCount = layoutNodes.filter((n) => n.parentNode === prevNode.id).length;
@@ -417,7 +441,16 @@ function NarrativeCanvasInner() {
       if (entryCard && node.id === entryCard.id) return;
 
       let stepId = node.id;
-      const childNodeId = node.type === "storyChild" ? node.id : null;
+      /**
+       * 记的是**裸** node_id（`data.nodeId`），不是图上那个 `<容器>__<node_id>` 的合成 id。
+       * 合成 id 带着容器前缀，一跨步就对不上：文本视图按产物里的 node_id 找 DOM、
+       * 跨步 chip 也按 node_id 反查哪些步骤含这个节点（见 utils/cross-step-node.ts）。
+       * 两侧用同一个键，节点粒度的定位才在图与文之间走得通。
+       */
+      const childNodeId =
+        node.type === "storyChild"
+          ? ((node.data as { nodeId?: string } | undefined)?.nodeId ?? null)
+          : null;
       if (stepId.includes("__")) stepId = stepId.split("__")[0];
       const resolved = resolveStepId(stepId, steps);
       if (resolved) stepId = resolved;

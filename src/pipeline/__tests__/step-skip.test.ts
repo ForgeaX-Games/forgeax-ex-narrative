@@ -59,7 +59,7 @@ describe("跳过记录", () => {
     const ctx = emptyCtx();
     const rec = markStepSkipped(ctx, "plot_generation", ["detailed_outlines_generated"]);
     expect(rec.missing).toEqual(["detailed_outlines_generated"]);
-    // 细纲由 2.3.8 故事结构席产出，所以提示该点名它，而不是甩字段名。
+    // 细纲由 2.5.9 故事结构席产出，所以提示该点名它，而不是甩字段名。
     expect(rec.blockedBy).toContain("structure");
     expect(rec.hint).toContain("需先运行");
     expect(getStepSkip(ctx, "plot_generation")).toEqual(rec);

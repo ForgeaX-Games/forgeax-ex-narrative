@@ -1,59 +1,58 @@
 /**
  * P0 回归护栏（CHAT 7 修复方案）：
- *   P0-1 目标输出形态锁定——buildGenerationPipelineConfig 对 vn 家族缺省锁 vn_full（不跑 design_auto 策划文档）；
- *        familyFromTargetOutput 从 target_output 反推 family。
+ *   P0-1 目标输出形态——buildGenerationPipelineConfig 解析出的 mode 必须真的跑得起来；
+ *        品类直接往下传，不经 rpg/vn 家族桶（家族已随 C1 的管线统一删除）。
  *   P0-2 顶层聚合——mergePlotTrees 给节点 id 加单元前缀防碰撞、topology 按实际节点重算（修 58≠12 断裂）。
  * 均为纯函数确定性断言，不依赖付费 LLM。
  */
 import { describe, it, expect } from "vitest";
-import { buildGenerationPipelineConfig } from "../orchestrator.js";
-import { familyFromTargetOutput } from "../phase2c-gen-adapt.js";
+import { buildGenerationPipelineConfig, DEFAULT_ADAPTATION_GENRE } from "../orchestrator.js";
+import { getModeConfig } from "../../pipeline/routing/modes.js";
 import { aggregateTemplates } from "../phase2-extract.js";
 import type { NarrativeTemplate, PlotTree } from "../../types/narrative-ip-dna.js";
 
-// ── P0-1 buildGenerationPipelineConfig：VN 家族缺省 vn_full ──
+// ── P0-1 buildGenerationPipelineConfig：解析出的 mode 必须跑得起来 ──
 describe("P0-1 buildGenerationPipelineConfig 模式解析", () => {
-  it("vn 家族 + 未指定模式 → vn_full + adv-interactive", () => {
-    const cfg = buildGenerationPipelineConfig({ pipelineConfig: {} }, "vn");
-    expect(cfg.mode).toBe("vn_full");
-    expect(cfg.genreCode).toBe("adv-interactive");
+  /**
+   * 这一条是这组断言的地基：其余几条问"解析出了什么"，只有它问"解析出的东西能不能用"。
+   *
+   * 缺了它，上一版把 vn 家族锁到 `vn_full` 的断言可以一路绿着 —— `vn_full` 还在 ModeId
+   * 联合里，字符串相等的断言看不出它已经不在 MODE_CONFIGS 中，而 getModeConfig 会对它
+   * 抛 `Unknown mode`。vn 正是 IP 改编的缺省家族，所以那是缺省路径上的崩溃。
+   */
+  /**
+   * 这一条是这组断言的地基：其余几条问"解析出了什么"，只有它问"解析出的东西能不能用"。
+   *
+   * 缺了它，上一版把 vn 家族锁到 `vn_full` 的断言可以一路绿着 —— `vn_full` 还在 ModeId
+   * 联合里，字符串相等的断言看不出它已经不在 MODE_CONFIGS 中，而 getModeConfig 会对它
+   * 抛 `Unknown mode`。vn 曾是 IP 改编的缺省家族，所以那是缺省路径上的崩溃。
+   */
+  it("解析出的 mode 都能被 getModeConfig 解析", () => {
+    for (const generationMode of [undefined, "design_auto"] as const) {
+      const cfg = buildGenerationPipelineConfig({
+        pipelineConfig: {},
+        ...(generationMode ? { generationMode } : {}),
+      });
+      // mode 为空是合法的：run() 会按 tier 取缺省。有值就必须解析得出配置。
+      if (cfg.mode) expect(() => getModeConfig(cfg.mode!)).not.toThrow();
+    }
   });
 
-  it("vn 家族 + design_auto（通用默认）→ 覆盖为 vn_full（不跑 D0-D4 策划）", () => {
-    const cfg = buildGenerationPipelineConfig({ pipelineConfig: {}, generationMode: "design_auto" }, "vn");
-    expect(cfg.mode).toBe("vn_full");
+  it("不改写 mode，品类自己路由", () => {
+    // 形态差异由叙事结构轴表达，不靠给影游单列一条 mode（C1 已退役那四条专属入口）。
+    expect(buildGenerationPipelineConfig({ pipelineConfig: {} }).mode).toBeUndefined();
+    expect(
+      buildGenerationPipelineConfig({ pipelineConfig: {}, generationMode: "design_auto" }).mode,
+    ).toBe("design_auto");
   });
 
-  it("vn 家族 + 显式 design_vn_full → 尊重不覆盖（策划+叙事）", () => {
-    const cfg = buildGenerationPipelineConfig({ pipelineConfig: {}, generationMode: "design_vn_full" }, "vn");
-    expect(cfg.mode).toBe("design_vn_full");
-  });
-
-  it("rpg 家族 + design_auto → 保持 design_auto（既有行为不变），不注入代表品类", () => {
-    const cfg = buildGenerationPipelineConfig({ pipelineConfig: {}, generationMode: "design_auto" }, "rpg");
-    expect(cfg.mode).toBe("design_auto");
-    expect(cfg.genreCode).toBeUndefined();
-  });
-
-  it("显式 genreCode 不被家族代表品类覆盖", () => {
-    const cfg = buildGenerationPipelineConfig({ pipelineConfig: { genreCode: "adv-avg" } }, "vn");
-    expect(cfg.genreCode).toBe("adv-avg");
-  });
-});
-
-// ── P0-1 familyFromTargetOutput：target_output → family ──
-describe("P0-1 familyFromTargetOutput", () => {
-  it("pipeline_template 含 vn → vn；含 rpg → rpg", () => {
-    expect(familyFromTargetOutput({ pipeline_template: "tpl-vn-v2" })).toBe("vn");
-    expect(familyFromTargetOutput({ pipeline_template: "tpl-rpg" })).toBe("rpg");
-  });
-  it("genre_code 关键词兜底：adv-interactive → vn；rpg-jrpg → rpg", () => {
-    expect(familyFromTargetOutput({ genre_code: "adv-interactive" })).toBe("vn");
-    expect(familyFromTargetOutput({ genre_code: "rpg-jrpg" })).toBe("rpg");
-  });
-  it("无法判定 → undefined（由调用方回退缺省 vn）", () => {
-    expect(familyFromTargetOutput(undefined)).toBeUndefined();
-    expect(familyFromTargetOutput({})).toBeUndefined();
+  it("未指定品类时给缺省品类，显式品类不被覆盖", () => {
+    expect(buildGenerationPipelineConfig({ pipelineConfig: {} }).genreCode).toBe(
+      DEFAULT_ADAPTATION_GENRE,
+    );
+    expect(
+      buildGenerationPipelineConfig({ pipelineConfig: { genreCode: "adv-avg" } }).genreCode,
+    ).toBe("adv-avg");
   });
 });
 

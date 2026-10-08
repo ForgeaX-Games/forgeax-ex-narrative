@@ -3,7 +3,7 @@ import { buildStructureCheckReport } from "../steps/structure-check.js";
 import type { NarrativeContext, OutlineNode, VnBranchedBeats } from "../../types/index.js";
 
 /**
- * 结构检查席位覆盖席位表 2.3.14 点名、而内联修复钩子一直没做的两项：
+ * 结构检查席位覆盖席位表 2.5.15 点名、而内联修复钩子一直没做的两项：
  * 结局节点设置与节奏设置。这里只测这两项和总判定——
  * 连接/环路/分支-合并沿用既有规则引擎，已有各自的测试。
  */

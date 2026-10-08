@@ -5,14 +5,13 @@
  * 显式化为一份类型化契约 `GenerationSeed`：
  *   - orchestrator 产出 GenerationSeed（唯一事实源，可序列化、可单测）；
  *   - hydrateContextFromSeed 是【唯一】把种子注入 NarrativeContext 的地方（消除散戳）；
- *   - isIpDnaSeeded 给下游（如 user-preference-analysis 短路）一个显式判定。
+ * 种子与原作的关系判定（isIpDnaSeeded / 忠实度 / 结构是否可改）住在 ./fidelity.ts。
  */
 import type {
   NarrativeContext,
   UploadedScript,
-  TargetStructure,
+  NodeBudgetOverride,
   GlobalControlParams,
-  VnUnitActMap,
 } from "../types/index.js";
 import type {
   NarrativeIpDna,
@@ -23,8 +22,9 @@ import type {
   LayeredOperators,
 } from "../types/narrative-ip-dna.js";
 import type { LongMemoryLedger } from "./phase5-polish.js";
-import type { PipelineFamily } from "./phase2c-gen-adapt.js";
 import { mapTemplateToContext } from "./phase2-extract.js";
+import { DEFAULT_COMPLEXITY_TIER } from "../pipeline/runtime/layer-threshold-config.js";
+import { inferStructureFromTopology } from "../knowledge/narrative-axes/infer-structure.js";
 
 /**
  * A→B 生成种子：理解管线交给生成管线的完整、显式契约。
@@ -46,14 +46,8 @@ export interface GenerationSeed {
   userInput: string;
   uploadedScript?: UploadedScript;
   complexity?: number;
-  /** 管线家族（rpg/vn），决定节点控制映射方式。 */
-  family: PipelineFamily;
-  /** RPG 节点数控制（family=rpg 时生效）。 */
-  targetStructure?: TargetStructure;
-  /** VN 开放幕数（family=vn 时生效）。 */
-  vnActCount?: number;
-  /** 章→幕锚定映射（P1-1，family=vn 且 IP 改编时生效）：每幕锚定源最小叙事单元供密度展开。 */
-  unitToActMap?: VnUnitActMap;
+  /** 各层节点预算覆盖。 */
+  nodeBudgetOverride?: NodeBudgetOverride;
   /** KAG 关系网络注入简报（如有）。 */
   relationNetwork?: string;
 }
@@ -80,29 +74,36 @@ export function hydrateContextFromSeed(seed: GenerationSeed): NarrativeContext {
   if (seed.uploadedScript) ctx.uploaded_script = seed.uploadedScript;
   if (seed.complexity != null) ctx.complexity = seed.complexity;
 
-  if (seed.family === "rpg" && seed.targetStructure) {
+  // 预算无条件生效。这里曾加 `seed.family === "rpg"` 的前置条件，而缺省家族是 vn ——
+  // 于是缺省路径下改编选的体量算了也白算，生成期读不到节点预算。
+  if (seed.nodeBudgetOverride) {
     const gcp: GlobalControlParams = {
-      complexity: seed.complexity ?? 0.5,
+      // 档位是 1-5 的整数枚举（极简…史诗），不是 0-1 连续量。旧默认值 0.5 会被下游
+      // Math.round 压成 1（极简），于是没带 complexity 的改编一律产出极简体量。
+      complexity: seed.complexity ?? DEFAULT_COMPLEXITY_TIER,
       deviation: 0,
-      target_structure: seed.targetStructure,
+      node_budget_override: seed.nodeBudgetOverride,
     };
     ctx.global_control_params = gcp;
   }
-  if (seed.vnActCount != null) ctx.vn_target_act_count = seed.vnActCount;
-  // P1-1：章→幕锚定映射注入（仅 IP 改编 VN 有）；幕数以映射为准，供 vn-segment-confirm 忠实分幕。
-  if (seed.unitToActMap && seed.unitToActMap.acts.length > 0) {
-    ctx.vn_unit_act_map = seed.unitToActMap;
-    ctx.vn_target_act_count = seed.unitToActMap.acts.length;
-  }
   if (seed.relationNetwork) ctx.relation_network = seed.relationNetwork;
+
+  /**
+   * 原作的结构就是这次改编的结构轴。
+   *
+   * 平时结构靠三轴投票选，IP 改编不需要投——原作长什么样已经摆在提炼出来的 plot_tree
+   * 里了。缺这一行的后果在真实跑里看得见：一部八段线性的原作，改编出来是一棵带分叉与
+   * 合流的树，因为生成侧拿不到原作形状，只能按缺省结构参数长。
+   *
+   * 只在没人指定时写：用户显式选了结构（"我就要把这本线性小说改成多结局"）是正当需求，
+   * 原作形状不该盖过它。数字分不清形状时 `inferStructureFromTopology` 返回 null，
+   * 那时也维持原样——猜错的结构会去调制分支率，比不猜代价大。
+   */
+  if (!ctx.narrative_axes?.structure) {
+    const inferred = inferStructureFromTopology(seed.topTemplate?.story_structure?.topology);
+    if (inferred) ctx.narrative_axes = { ...ctx.narrative_axes, structure: inferred };
+  }
 
   return ctx;
 }
 
-/**
- * 显式判定：该 ctx 是否由 IP DNA 种子水合而来。
- * 下游 step（如 user-preference-analysis）据此短路，避免覆盖 A→B 预置参数。
- */
-export function isIpDnaSeeded(ctx: NarrativeContext): boolean {
-  return !!ctx.narrativeIpDna;
-}

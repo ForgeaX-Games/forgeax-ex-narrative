@@ -118,7 +118,7 @@ export const SCRIPT_SCENE_SKELETON_COMPOSER: PromptComposer = {
     constraints: "{{SKILL.constraints}}",
     output_schema: SSG_OUTPUT_SCHEMA,
   },
-  systemBlockOrder: ["role", "task_spec", "ip_dna", "style_guide", "constraints", "output_schema"],
+  systemBlockOrder: ["role", "task_spec", "style_guide", "ip_dna", "constraints", "output_schema"],
   userBlockOrder: [],
   skillSlots: ["style_guide", "constraints"],
 };

@@ -72,7 +72,7 @@ export const LORE_GENERATION_COMPOSER: PromptComposer = {
     context_inputs: (ctx: NarrativeContext): string => buildLoreUserPrompt(ctx),
     user_instructions: (ctx: NarrativeContext): string => userInstructionsBlock(ctx),
   },
-  systemBlockOrder: ["role", "task_spec", "ip_dna", "style_guide", "constraints", "cot", "ip_source", "output_schema"],
+  systemBlockOrder: ["role", "task_spec", "style_guide", "ip_dna", "constraints", "cot", "ip_source", "output_schema"],
   userBlockOrder: ["context_inputs", "user_instructions"],
   skillSlots: ["style_guide", "constraints"],
 };

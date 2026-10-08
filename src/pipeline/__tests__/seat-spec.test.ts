@@ -25,6 +25,9 @@ import "../core/step-registrations.js";
 const KNOWN_NAME_ALIASES: Readonly<Record<string, string>> = {
   content_check: "内容检查助手",
   deai: "去 AI 味助手",
+  // CSV 写「叙事生成配置助手（入口）」。那个括注说的是它在图上的位置 —— 表格给读者的
+  // 提示，不是助手名字的一部分。UI 上它就长在入口那一格，标题里再说一遍是多余的。
+  entry_config: "叙事生成配置助手",
 };
 
 describe("seat spec（agent 配置表入码）", () => {
@@ -32,7 +35,7 @@ describe("seat spec（agent 配置表入码）", () => {
     expect(() => assertSeatSpecComplete()).not.toThrow();
   });
 
-  it("与 assistant-seats 的 20 席一一对应", () => {
+  it("与 assistant-seats 逐席一一对应", () => {
     const specIds = [...SEAT_SPECS.map((s) => s.seatId)].sort();
     const seatIds = [...ASSISTANT_SEATS.map((s) => s.id)].sort();
     expect(specIds).toEqual(seatIds);
@@ -79,11 +82,32 @@ describe("seat spec（agent 配置表入码）", () => {
    * 原第二实现 cinematic_storyboard 随 vn-v1 一并封存后本席已无落差主体）；
    * plot（C3：唯一实现 plot_generation 已显式登记 RUNNER_MIGRATIONS.wave，
    * 原另两个实现 emergent_event / event_pool 随四个品类特化能力于 C3 一并
-   * 封存后本席已无落差主体）。
+   * 封存后本席已无落差主体）；character（v4：按核心设定给的角色名单分批，每批几个
+   * 由体量定，已登记 RUNNER_MIGRATIONS.chunked）；structure（v4：席位整体的串行由
+   * composite 外壳表达，两个实现的原子形态改由 SeatSpec.substepStructures 显式说出——
+   * 它本就不是待修的落差，而是两层事实）。
    */
   const STILL_DIVERGING = [
-    "character", "item", "scene_list", "structure",
+    "item", "scene_list",
   ];
+
+  /**
+   * 一席多实现时，"形状"有两层：席位整体的形状与单个实现的形状。两层都得答得出来，
+   * 否则会各自出一种错——只有席位那层时，派生单个实现的配置会拿到整体形状（结构席
+   * 的两个实现会被当成 sequence）；只有实现那层时，席位整体的串行就没人表达了。
+   */
+  it("一席多实现：席位整体与单个实现各有自己的形状", () => {
+    expect(executableStructureFor("structure")).toBe("sequence");
+    expect(executableStructureFor("structure", "outline_batch")).toBe("single-turn");
+    expect(executableStructureFor("structure", "detailed_outline")).toBe("single-turn");
+  });
+
+  it("没登记的 stepId 落回席位形状（缺省即与本席一致）", () => {
+    expect(executableStructureFor("structure", "not-a-substep")).toBe("sequence");
+    expect(executableStructureFor("plot", "plot_generation")).toBe(
+      executableStructureFor("plot"),
+    );
+  });
 
   it("落差登记与未对齐名册逐字对齐（两边都删才算迁完）", () => {
     const registered = [...SHAPE_DIVERGENCES.map((d) => d.seatId)].sort();

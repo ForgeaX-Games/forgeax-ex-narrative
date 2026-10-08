@@ -146,7 +146,11 @@ describe("orchestrator dry-run (no LLM, heuristic extract)", () => {
     // seed ctx 已 A→B 映射 + 注入生成 brief
     const gu = result.gameUnits[0];
     expect(gu.seedContext.user_input.length).toBeGreaterThan(0);
-    expect(gu.seedContext.vn_target_act_count).toBeGreaterThanOrEqual(2);
+    // 幕数不再注入：读取者随 tpl-vn-v2 封存，此前是只写不读。改编选的体量经
+    // node_budget_override 生效，而它从前被 `family === "rpg"` 挡在缺省路径之外。
+    expect(
+      gu.seedContext.global_control_params?.node_budget_override?.l0_nodes,
+    ).toBeGreaterThan(0);
     // 落盘：层级索引可只读回读
     const summary = readIpDnaSummary(result.story_timestamp, "冰封纪元", { cwd: TMP });
     expect(summary?.node_count).toBe(Object.keys(result.dna.nodes).length);

@@ -21,7 +21,7 @@ function outlineToText(outline: InitialOutline | undefined): string {
 export const WORLDVIEW_COMPOSER: PromptComposer = {
   stepId: "worldview",
   skillSlots: ["style_guide", "examples", "constraints", "worldview_archetype"],
-  systemBlockOrder: ["role", "task", "ip_dna", "worldview_archetype", "style_guide", "examples", "constraints", "cot", "ip_source", "output_format_hint"],
+  systemBlockOrder: ["role", "task", "worldview_archetype", "style_guide", "ip_dna", "constraints", "cot", "examples", "ip_source", "output_format_hint"],
   userBlockOrder: ["context_inputs", "design_snippet", "task_instruction", "output_schema", "user_instructions"],
   blocks: {
     cot: `## 机制与流程

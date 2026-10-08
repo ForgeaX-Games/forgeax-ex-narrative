@@ -30,6 +30,10 @@ import type {
 } from "../../types/narrative-ip-dna.js";
 import { DEFAULT_CONFLICT_PRIORITY } from "../../types/narrative-ip-dna.js";
 import { collectOperatorPool, selectOperatorsForStep } from "../phase2-extract.js";
+import { borrowOperators, type LibraryRoots } from "../../knowledge/narrative-library/store.js";
+
+/** 原创路径一次借多少条算子：够填满三视角槽位，又不至于让检索退化成"全库倒出"。 */
+const OPERATOR_BORROW_LIMIT = 24;
 import {
   fillSlot,
   precheckConflict,
@@ -262,15 +266,32 @@ export async function buildOperatorInjection(
   ctx: NarrativeContext,
   stepId: string,
   llm: LLMClient,
+  /**
+   * 算子库的根；缺省按工作目录定位。生产路径不传，测试传一个空目录——
+   * 不给这个口子的话，单测会读到本机跑过的真实库，同一份代码在跑过生成的机器上
+   * 失败、在干净机器上通过。
+   */
+  libraryRoots?: LibraryRoots,
 ): Promise<OperatorInjectionResult | null> {
   const spec = getSlotSpec(stepId);
   if (!spec) return null;
   const dna = ctx.narrativeIpDna;
-  if (!dna) return null;
 
-  const storyTitle = ctx.story_title ?? dna.title ?? "";
-  const story_id = ctx.story_timestamp ?? dna.story_id ?? "";
-  const fallbackPool = collectOperatorPool(dna, dna.rootId);
+  const storyTitle = ctx.story_title ?? dna?.title ?? "";
+  const story_id = ctx.story_timestamp ?? dna?.story_id ?? "";
+  /**
+   * 没有 IP DNA 时从叙事算子库借（主表 4.2.1/4.2.2 的"长期叙事能力"就兑现在这里）。
+   *
+   * 从前这里直接 `return null`：算子注入是 IP 改编独占的能力，原创作品一条手法也
+   * 拿不到 —— 而算子本身与它出自哪部作品无关，那正是它能被"积累"的前提。
+   *
+   * 库也空时仍然返回 null：没有池子可选，装出一个空的三视角槽位只会让提示词里多
+   * 一段什么也没说的标题。
+   */
+  const fallbackPool = dna
+    ? collectOperatorPool(dna, dna.rootId)
+    : borrowOperators({ limit: OPERATOR_BORROW_LIMIT, roots: libraryRoots });
+  if (fallbackPool.length === 0) return null;
   const layered = (ctx as Record<string, unknown>)._operator_layers as LayeredOperators | undefined;
   const stepLayers: ExtractionLayer[] = spec.layers ?? ["leaf"];
   const { pool: operatorPool, layerByUid } = selectOperatorsForStep(layered, stepLayers, fallbackPool);

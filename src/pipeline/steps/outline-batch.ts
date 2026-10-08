@@ -54,8 +54,11 @@ import {
   getNodeBudget,
   getTargetBranchRatio,
   getMergeTendency,
+  structureTopology,
+  defaultBranchPosition,
   type StructurePlanItem,
 } from "../runtime/layer-threshold-config.js";
+import { NEUTRAL_TOPOLOGY, type StructureTopology } from "../../knowledge/narrative-axes/index.js";
 import { deviationFromLegacy } from "../../types/index.js";
 import {
   deriveTreeFields,
@@ -93,7 +96,7 @@ interface StructurePlan {
   narrative_stage?: string;
   /**
    * 分叉处哪条支线属于最优路径（分支字母 a/b/c…）。
-   * 席位表 2.3.8 要求结构层标出"最符合用户需求的那一条链路"。
+   * 席位表 2.5.9 要求结构层标出"最符合用户需求的那一条链路"。
    * 缺省时按 a 处理——总得有一条，不标等于把判断推给下游瞎猜。
    */
   optimal_branch?: string;
@@ -128,7 +131,7 @@ export const OUTLINE_PLAN_COMPOSER: PromptComposer = {
 达成这个结局要满足什么。条件写成玩家可感的判据（选了哪个选项、某个数值过线、
 是否持有某物、是否去过某节点），不要写成"剧情需要"。普通节点默认无条件推进。
 条件挂在**出边**上：一个三选分支就是三条边各带自己的条件与代价，不要把三个条件
-堆在节点上再让下游去猜哪个通向哪。收束回主干的边要显式标为 merge_back。
+堆在节点上再让下游去猜哪个通向哪。收束回主干的边要显式标为 merge。
 
 开分支时先定这处分岔的**代价档**，再决定铺几条边：
 - **converge**：路径不同、结果相同——一般失误可挽回，代价是绕远或损耗，走几个节点后汇回；
@@ -137,7 +140,7 @@ export const OUTLINE_PLAN_COMPOSER: PromptComposer = {
 定不出代价档，说明这处分岔本身没想清楚。**几条边指向同一个目标是假分支**，
 玩家的选择没有产生任何差异，宁可不开。每条选择边尽量写明它的代价与人设契合倾向。
 
-结局要分档：**H 圆满 / B 悲剧 / O 其他**（开放、反转、隐藏），并区分作用域——
+结局要分档：**good 圆满 / bad 悲剧 / neutral 无明确落点**（开放式收尾；反转与隐藏按其落点归好或坏），并区分作用域——
 **global** 是全剧终，**local** 是中途的 game over 或提前圆满。允许失败的作品会有
 好几个 local 结局，这是正常的；但 global 结局不该满地都是。
 
@@ -170,7 +173,7 @@ export const OUTLINE_PLAN_COMPOSER: PromptComposer = {
       { concept: "节点功能位（起始/分支/聚合/结局/普通）",
         field: "本阶段不直接输出——由下游 outline-tree.deriveTreeFields 从 branch_count/branch_position/" +
           "should_merge 推导，这里给对结构参数就够，不要额外发明一个 node_function 字段" },
-      { concept: "分支的代价档（converge/diverge/terminal）与结局分档（H/B/O）",
+      { concept: "分支的代价档（converge/diverge/terminal）与结局分档（good/bad/neutral）",
         field: "本阶段不输出——留给 Step1.5b 内容填充阶段在 story_elements/tree 语义里落地" },
       { concept: "最优路径", field: "optimal_branch" },
     ]),
@@ -251,7 +254,7 @@ function buildStep1Prompt(ctx: NarrativeContext): string {
   const layerEntropy = getLayerEntropy(entropy, 1, l1Ctrl);
   const deviation = deviationFromLegacy(gcp);
 
-  const branchSection = buildBranchPromptSection(1, complexity, layerEntropy);
+  const branchSection = buildBranchPromptSection(1, complexity, layerEntropy, structureTopology(ctx));
   const deviationSection = buildDeviationPrompt(deviation);
   const nodeCountSection = buildNodeCountPromptSection(1, layerEntropy, l1Ctrl?.min_nodes, l1Ctrl?.max_nodes, complexity);
 
@@ -321,7 +324,10 @@ function normalizePlan(p: StructurePlan): StructurePlan {
   return p;
 }
 
-function buildSkeleton(plans: StructurePlan[]): SkeletonNode[] {
+function buildSkeleton(
+  plans: StructurePlan[],
+  topology: StructureTopology = NEUTRAL_TOPOLOGY,
+): SkeletonNode[] {
   const nodes: SkeletonNode[] = [];
   const letters = "abcdefgh";
 
@@ -331,7 +337,10 @@ function buildSkeleton(plans: StructurePlan[]): SkeletonNode[] {
     const count = Math.max(1, plan.outline_count);
     const numBranches = Math.max(1, plan.branch_count);
     const hasBranch = numBranches >= 2 && count >= 2;
-    const branchPos = hasBranch ? Math.min(plan.branch_position ?? 2, count) : -1;
+    // LLM 没指定分叉位置时按结构的 branchPlacement 落位：早分是 Y 型，
+    // 晚分是胖尾。从前一律落在第 2 位，于是所有结构的分叉都堆在开头。
+    const fallbackPos = defaultBranchPosition(count, topology.branchPlacement);
+    const branchPos = hasBranch ? Math.min(plan.branch_position ?? fallbackPos, count) : -1;
     const shouldMerge = plan.should_merge ?? true;
 
     let seqIdx = 0;
@@ -426,6 +435,83 @@ interface PartialOutlineFill extends TreeSemantics {
   content: string;
 }
 
+
+/**
+ * 注入骨架的取用：在场就意味着「这棵树已经定了」。
+ *
+ * 局部重跑时按本次要处理的 L0 父节点过滤，与常规路径同一口径。筛空了返回 null
+ * 而不是空数组 —— 那说明注入骨架与本次的 L0 节点对不上（父指针错位），此时退回
+ * 常规规划比产出一棵空树可诊断。
+ */
+function injectedL1Skeleton(
+  ctx: NarrativeContext,
+  frameworkNodes: FrameworkNode[],
+): OutlineNode[] | null {
+  const seed = ctx.injected_structure_seed?.outlines;
+  if (!seed || seed.length === 0) return null;
+  const parents = new Set(frameworkNodes.map((n) => n.node_id));
+  const mine = seed.filter((o) => parents.has(o.parent_id));
+  return mine.length > 0 ? mine : null;
+}
+
+/**
+ * 注入模式的内容填充。
+ *
+ * 只跑双向一致化这一步修复，其余五步一概不跑。那五步（跨父连接推断、组内修复、
+ * 跨分支过滤、悬挂修复、N×N 路由）都是为「LLM 规划出来的骨架可能不自洽」设计的；
+ * 对确定性映射出来的骨架，修复就是篡改 —— 原作真实存在的边会被当成错误删掉，
+ * 原作故意留的开放结局会被补上一条边。双向一致化不增删语义，只保证 A 的后继里
+ * 有 B 时 B 的前驱里也有 A，这一步是纯粹的自洽保障。
+ *
+ * 结构语义字段（功能位、边、分支代价档、结局分档、最优路径）全部取注入值，不走
+ * `deriveTreeFields` —— 那是从骨架反推语义，而原作已经把语义说清楚了。填充 LLM
+ * 只碰文本字段。
+ */
+async function fillInjectedOutlines(
+  ctx: NarrativeContext,
+  llm: LLMClient,
+  injected: OutlineNode[],
+  frameworkNodes: FrameworkNode[],
+): Promise<void> {
+  const asSkeleton: SkeletonNode[] = injected.map((o, i) => ({
+    node_id: o.node_id,
+    parent_id: o.parent_id,
+    sequence_index: i,
+    is_branch: o.node_function === "branch",
+    is_merge_point: o.node_function === "merge",
+    prev_node: o.prev_node,
+    next_node: o.next_node,
+    on_optimal_path: o.on_optimal_path ?? true,
+  }));
+  const consistent = ensureBidirectionalConsistency(asSkeleton);
+  const connOf = new Map(consistent.map((s) => [s.node_id, s]));
+
+  const fillMap = await step1_5b_batchFill(ctx, llm, consistent, frameworkNodes);
+
+  const outlines: OutlineNode[] = injected.map((src) => {
+    const fill = fillMap.get(src.node_id);
+    const plot = fill?.story_elements?.plot;
+    const conn = connOf.get(src.node_id);
+    return {
+      ...src,
+      content_id: `ol_${src.node_id}`,
+      name: fill?.name ?? src.name,
+      narrative_stage: fill?.narrative_stage ?? src.narrative_stage ?? "rising",
+      prev_node: conn?.prev_node ?? src.prev_node,
+      next_node: conn?.next_node ?? src.next_node,
+      story_elements: {
+        plot: {
+          cause: plot?.cause ?? "",
+          process: plot?.process ?? "",
+          result: plot?.result ?? "",
+        },
+      },
+      content: fill?.content ?? "",
+    };
+  });
+
+  ctx.outlines_generated = { outlines };
+}
 
 async function step1_5b_batchFill(
   ctx: NarrativeContext,
@@ -642,6 +728,14 @@ export async function outlineBatch(
     if (frameworkNodes.length === 0) return;
   }
 
+  // 注入模式：树已由原作确定性映射而来，跳过规划 LLM 与体量 enforce，只补内容。
+  const injected = injectedL1Skeleton(ctx, frameworkNodes);
+  if (injected) {
+    await fillInjectedOutlines(ctx, llm, injected, frameworkNodes);
+    await structureValidationL1(ctx, llm);
+    return;
+  }
+
   // Step 1: 结构规划
   const step1Raw = await llm.callWithRetry(
     composeSystemPrompt(OUTLINE_PLAN_COMPOSER, ctx),
@@ -670,8 +764,9 @@ export async function outlineBatch(
   const entropy = getEntropy(complexity);
   const l1Ctrl = gcp?.layer_controls?.layer_1;
   const layerEntropy = getLayerEntropy(entropy, 1, l1Ctrl);
-  const grossTarget = getTargetBranchRatio(complexity, layerEntropy, 1);
-  const mergeTend = getMergeTendency(complexity, 1);
+  const topology = structureTopology(ctx);
+  const grossTarget = getTargetBranchRatio(complexity, layerEntropy, 1, topology);
+  const mergeTend = getMergeTendency(complexity, 1, topology);
 
   const fwStageMap = new Map(frameworkNodes.map(n => [n.node_id, n.stage_type]));
   const enforceable: StructurePlanItem[] = rawPlans.map((p) => ({
@@ -681,9 +776,9 @@ export async function outlineBatch(
     should_merge: p.should_merge,
     narrative_stage: p.narrative_stage ?? fwStageMap.get(p.parent_id),
   }));
-  const enforced = enforceBranchInPlan(enforceable, grossTarget, mergeTend, 1);
+  const enforced = enforceBranchInPlan(enforceable, grossTarget, mergeTend, 1, topology);
 
-  const l1Max = gcp?.target_structure?.l1_per_parent ?? l1Ctrl?.max_nodes;
+  const l1Max = gcp?.node_budget_override?.l1_per_parent ?? l1Ctrl?.max_nodes;
   const clamped = clampChildCount(enforced, 1, layerEntropy, l1Ctrl?.min_nodes, l1Max, complexity);
 
   const plans: StructurePlan[] = rawPlans.map((p, i) => ({
@@ -694,7 +789,7 @@ export async function outlineBatch(
   }));
 
   // 构建骨架
-  let skeleton = buildSkeleton(plans);
+  let skeleton = buildSkeleton(plans, topology);
 
   // Step 1.5a: 连接修复链（6 步，移植自 v3 fix_all_connections）
   const parentNodes = frameworkNodes.map(n => ({

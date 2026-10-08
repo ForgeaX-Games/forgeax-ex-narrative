@@ -67,13 +67,20 @@ export const RUNNER_MIGRATIONS: Readonly<Record<string, RunnerMigration>> = {
   /**
    * 角色档案席。
    *
-   * 席位声明 parallel（体量大→多并行），但实现今天是**一次调用出全部角色**：
-   * 分批并发从未落地过（见 seat-spec 落差登记）。所以这次迁移是 single-turn 平迁，
-   * 搬的是"数组非空校验"与"逐角色归一 + 主角兜底 + player_name 派生"这两段。
+   * 席位声明的 parallel（体量大→多并行）在 v4 落地：按核心设定给的角色名单分批，
+   * 每批几个由体量定（`characterBatchSize`）。小体量仍是一次调用出全部——`characterBatches`
+   * 那时只返回一批，分片机制在形式上仍然走，但实际只发一次请求，与从前等价。
+   *
+   * 并发上限取 3 而不是不设限：本席的批与批之间没有依赖，理论上可以全开，但每批
+   * 都是长输出，全开只会把限流撞满，然后在重试里把省下的时间还回去。
    */
   character_enrichment: {
     validators: ["character_enrichment_validator"],
-    normalizer: "character_enrichment_normalizer",
+    chunked: {
+      chunkStrategy: "by-batch",
+      concurrency: 3,
+      mergeStrategy: "custom",
+    },
   },
 
   /** 道具清单席。同角色席：单次调用 + 归一，数组可能裸给也可能包在 item_database 里。 */
@@ -173,14 +180,6 @@ export const RUNNER_MIGRATIONS: Readonly<Record<string, RunnerMigration>> = {
       mergeStrategy: "custom",
     },
   },
-  plot_polish: {
-    validators: ["plot_polish_validator"],
-    chunked: {
-      chunkStrategy: "by-batch",
-      concurrency: POLISH_BATCH_SIZE,
-      mergeStrategy: "custom",
-    },
-  },
   playability_adapt: {
     validators: ["playability_adapt_validator"],
     chunked: {
@@ -198,10 +197,10 @@ export const RUNNER_MIGRATIONS: Readonly<Record<string, RunnerMigration>> = {
    * 故事框架（outline 席宏观展开）。legacy 内部本是「规划 LLM → 结构修复 →
    * 填充 LLM」一个环，此前只能整体留在 step.fn（描述符故意不登记 composer，
    * 见 step-registrations.ts 顶部说明）。四阶段忠实对应 legacy 的四段：
-   *   route（判定 full/regen/skip）→ prepare（regen 或 full 各自的骨架准备，
+   *   route（判定 full/regen/seeded/skip）→ prepare（骨架已定或 full 各自的准备，
    *   互斥用 condition 二选一）→ fill（内容填充，两种模式共用同一 LLM 调用）。
    * validators/normalizer 与 legacy 共用同一批函数（story-framework.ts 的
-   * storyFrameworkRoute/PrepareRegen/PrepareFull/normalizeStoryFramework），
+   * storyFrameworkRoute/PrepareFixed/PrepareFull/normalizeStoryFramework），
    * 两条路径逐字节同源，不是各写一份。
    */
   story_framework: {
@@ -224,7 +223,14 @@ export const RUNNER_MIGRATIONS: Readonly<Record<string, RunnerMigration>> = {
         {
           type: "deterministic",
           condition: "ctx._sf_mode === regen",
-          processor: "story_framework_prepare_regen",
+          processor: "story_framework_prepare_fixed",
+        },
+        // seeded 与 regen 同一个 processor，只能各挂一个 stage：condition DSL 求的是
+        // 单个二元比较，写不出 `=== regen || === seeded`。
+        {
+          type: "deterministic",
+          condition: "ctx._sf_mode === seeded",
+          processor: "story_framework_prepare_fixed",
         },
         {
           type: "llm",

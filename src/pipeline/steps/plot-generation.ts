@@ -9,13 +9,20 @@
  * - 情节内容为小说级笔触（1000-2000 字），含演出要素（jrpg_elements 为历史字段名）
  * - 增强上下文：上游脉络（宏观框架→叙事单元→本节点）、用户需求、剧情简介
  */
-import type { NarrativeContext, DetailedOutlineNode, PlotNode } from "../../types/index.js";
+import type {
+  BeatSpaceTime,
+  DetailedOutlineNode,
+  NarrativeContext,
+  PlotNode,
+  StateChange,
+} from "../../types/index.js";
 import type { LLMClient } from "../runtime/llm-client.js";
 import { extractJSON } from "../runtime/llm-client.js";
 import { validateTripleConstraints } from "../../utils/constraint-validator.js";
 import { buildDesignContextSnippet, appendUserInstructions, buildIpSourceReference, userInstructionsBlock } from "./design-context-helper.js";
 import { composeSystemPrompt, composeUserPrompt, IP_DNA_SLOT_BLOCK, type PromptComposer } from "../runtime/prompt-composer.js";
 import { PROSE_CRAFT } from "../prompt/narrative-craft.js";
+import { buildPlotControlPrompt } from "../runtime/layer-threshold-config.js";
 import { inputPriorityChain, modeDispatchSource, conceptFieldMapping, preOutputChecklist } from "../prompt/structural-clarity.js";
 import { getNodeFilter } from "../graph/node-merge.js";
 import { markStepSkipped } from "../core/step-skip.js";
@@ -61,7 +68,11 @@ const SYSTEM_OUTPUT = `### 输出格式（严格 JSON 对象）
     "narration_hints": ["叙事提示"],
     "bgm_hint": "背景音乐提示",
     "camera_hint": "镜头提示"
-  }
+  },
+  "spacetime": { "time": "故事世界纪年", "location": "本节点所在场景" },
+  "state_deltas": [
+    { "dimension": "character", "subject": "角色原名", "attribute": "physical.attire", "to": "新状态" }
+  ]
 }
 
 dialogue_segments[].kind 按内容性质标注（不写默认按 "dialogue" 处理）：
@@ -69,7 +80,19 @@ dialogue_segments[].kind 按内容性质标注（不写默认按 "dialogue" 处�
 - "inner_monologue"：角色的内心独白，不出声
 - "narration"：旁白/画外音式的叙述性文字，不是角色台词
 - "sfx"：拟声词或音效提示
-按叙事顺序把三类都塞进这同一个数组，不要把旁白单独挪去别处——顺序本身就是信息。`;
+按叙事顺序把三类都塞进这同一个数组，不要把旁白单独挪去别处——顺序本身就是信息。
+
+spacetime 与 state_deltas 记的是"这一节点之后世界变成什么样"，供下游查"走到这里时
+谁在哪、拿着什么"。两项都**可省**：你正在写 1000-2000 字正文，记账不该挤占写作；
+说不准就留空，之后会有一次专门的调用来补。但**填了就要准**——补出来的不如你写时知道的。
+- spacetime：与上一节点同一时空就省掉，不要把上游抄一遍
+- state_deltas：确实什么都没变（纯对话、纯铺垫）就写 []，与"没填"是两回事
+- subject 用角色档案 / 道具库里的原名，逐字一致
+- attribute 只能取以下值，自创的会被丢掉：
+  · character → physical.body | physical.attire | psychology.personality | psychology.persona_base | psychology.current_mood | power_level | relationships
+    relationships 的 to 写成 JSON 字符串：{"target":"对方原名","nature":"关系性质"}
+  · item → location | acquired(to="是"/"否") | condition | durability(to ∈ permanent|multi_use|single_use|consumed)
+  · world / plot → to 直接写新状态描述`;
 
 /** 当前波次单元携带的节点材料（分层器塞进 `unit.data`，见文件末尾的 wave 接线）。 */
 interface PlotChunkData {
@@ -166,10 +189,7 @@ export const PLOT_GENERATION_COMPOSER: PromptComposer = {
     },
     user_instructions: (ctx: NarrativeContext): string => userInstructionsBlock(ctx),
   },
-  systemBlockOrder: [
-    "base", "ip_dna", "craft", "style_guide", "constraints",
-    "cot", "priority_chain", "mode_source", "concept_mapping", "self_check", "output",
-  ],
+  systemBlockOrder: ["base", "style_guide", "ip_dna", "craft", "constraints", "cot", "priority_chain", "mode_source", "concept_mapping", "self_check", "output"],
   userBlockOrder: ["main", "user_instructions"],
   skillSlots: ["style_guide", "constraints"],
 };
@@ -298,7 +318,7 @@ ${JSON.stringify(ctx.detailed_character_sheets ?? [], null, 2)}
 ${JSON.stringify(ctx.worldview_structure ?? {}, null, 2)}
 
 ## 全局调控参数
-${JSON.stringify(ctx.global_control_params ?? {})}
+${buildPlotControlPrompt(ctx.global_control_params)}
 ${slidingWindowSummary ? `\n## 前一节点实际生成摘要（保持叙事连贯）\n${slidingWindowSummary}` : ""}
 ${prevNodes.length === 0 ? buildEntryNodeGuidance(ctx) : buildCallbackGuidance(node, ctx)}
 请输出此节点的情节JSON。node_id 必须为 "${node.node_id}"，parent_id 必须为 "${node.parent_id}"。
@@ -383,7 +403,43 @@ function normalizePlot(raw: Record<string, unknown>, node: DetailedOutlineNode):
     prev_node: node.prev_node,
     next_node: node.next_node,
     narrative_stage: node.narrative_stage,
+    // 两项都按"模型没给就不写"处理，不兜底成空值：`undefined` 与 `[]` 在账本那边
+    // 意思不同（没填 / 明确判定无变更），兜底会把"漏填"记成"确实没变化"，
+    // 于是该补的节点永远不会被送去补全。
+    ...(isSpacetime(raw.spacetime) ? { spacetime: raw.spacetime } : {}),
+    ...(Array.isArray(raw.state_deltas)
+      ? { state_deltas: normalizeStateDeltas(raw.state_deltas) }
+      : {}),
   };
+}
+
+function isSpacetime(raw: unknown): raw is BeatSpaceTime {
+  if (!raw || typeof raw !== "object") return false;
+  const { time, location } = raw as Record<string, unknown>;
+  return typeof time === "string" && typeof location === "string";
+}
+
+/**
+ * 只留形状完整的变更条目。缺 dimension / subject / to 的条目在折叠时会静默落空
+ * （`applyChange` 认不出它），留着不如丢掉——丢在这里查得到，落空查不到。
+ */
+function normalizeStateDeltas(raw: readonly unknown[]): StateChange[] {
+  const DIMENSIONS = ["time", "location", "character", "item", "world", "plot"];
+  const out: StateChange[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const c = item as Record<string, unknown>;
+    if (!DIMENSIONS.includes(String(c.dimension))) continue;
+    if (typeof c.to !== "string" || !c.to) continue;
+    out.push({
+      dimension: c.dimension as StateChange["dimension"],
+      subject: String(c.subject ?? ""),
+      attribute: String(c.attribute ?? ""),
+      ...(typeof c.from === "string" ? { from: c.from } : {}),
+      to: c.to,
+    });
+  }
+  return out;
 }
 
 const MAX_CONSTRAINT_RETRIES = 2;

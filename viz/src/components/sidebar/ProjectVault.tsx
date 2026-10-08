@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AtSign, Check, ChevronDown, ChevronLeft, ChevronRight, Crosshair, FileText, Plus, Trash2, X } from "lucide-react";
 import {
   addCategory,
-  collectAsset,
   createProject,
   deleteCategory,
   deleteProject,
@@ -15,11 +14,17 @@ import {
   type NarrativeProject,
   type ProjectAsset,
 } from "../../lib/projectVault";
+import { archiveAsset } from "../../lib/archiveAsset";
 import { composerTarget, sendFileToComposer } from "../../lib/bridge";
 import { useMention } from "../../hooks/useMention";
 import { canLocateInContentBrowser, locateInContentBrowser } from "../../lib/locateArtifact";
 import { fetchRunFiles } from "../../hooks/useNarrativeStream";
-import { buildLibraryContents, CONTENT_TYPES, type LibraryFile } from "../../lib/contentTypes";
+import {
+  buildLibraryContents,
+  classifyContent,
+  CONTENT_TYPES,
+  type LibraryFile,
+} from "../../lib/contentTypes";
 import { useNarrativeStore } from "../../store/narrativeStore";
 import { useNarrativeRuntime } from "../runtime/NarrativeRuntimeProvider";
 import { useT } from "../../i18n";
@@ -132,9 +137,9 @@ function AssetPicker({
  * 与任务的分工——任务是系统按一次生成落的目录，条目三行、类别按实跑环节自动归；
  * 项目这边三条信息全由用户定：时间戳取「确认建项目」那一刻，标题与标签自填。
  *
- * 中间层不预铺。新建类别时把单品助手花名册当**选项**递过去（省得每次手打「角色档案」），
- * 也可以直接自己起名；落下来的一律是普通自建类别，能改名能删。
- * 铺满二十个空格子是任务侧不该做的事，在用户自己的柜子里更不该做。
+ * 中间层是叙事类型，从资产自己的文件名派生（同一张表任务侧也在用），用户不用先建格子；
+ * 只铺装得下东西的那几类，空的不铺——铺满二十个空格子在用户自己的柜子里比在任务侧更没道理。
+ * 自建类别仍在，它管的是跨叙事类型的归拢，落下来能改名能删，优先于派生归位。
  *
  * 眼下整库存在浏览器本地（见 lib/projectVault.ts）：后端还没有 projects 这个实体。
  * 换后端时只换那一层端口，这里不动。
@@ -213,10 +218,6 @@ export function ProjectVault() {
   // ── 项目内部：资产管理 ──────────────────────────────────────────────────
   if (opened) {
     const categories = opened.categories;
-    /** 建类别时递给用户的选项：花名册里还没被这个项目用掉的那些名字。 */
-    const catOptions = CONTENT_TYPES.map((def) => t(def.labelKey)).filter(
-      (name) => !categories.some((c) => c.name === name),
-    );
 
     const submitCategory = (name: string) => {
       if (!name.trim()) return;
@@ -271,7 +272,8 @@ export function ProjectVault() {
               aria-label={t("vault.moveTo")}
               onChange={(e) => void moveAsset(opened.id, a.id, e.target.value || null)}
             >
-              <option value="">{t("vault.uncategorized")}</option>
+              {/* 空值不是"扔进未归类"，是"交回叙事类型自动归位"。 */}
+              <option value="">{t("vault.autoByType")}</option>
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
@@ -313,7 +315,8 @@ export function ProjectVault() {
         title={t("vault.addAsset")}
         onClose={() => setPickInto(null)}
         onPick={(taskKey, file) => {
-          void collectAsset(
+          // 收进来即归档：同一个动作把这一份记为定稿，见 lib/archiveAsset.ts。
+          void archiveAsset(
             opened.id,
             { taskKey, path: file.path, name: file.name, contentType: file.type },
             categoryId,
@@ -323,11 +326,30 @@ export function ProjectVault() {
       />
     );
 
-    const uncategorized = opened.assets.filter((a) => {
-      if (a.categoryId === null) return true;
-      // 花名册改名或用户删了自建类别后，孤儿资产退回未归类而不是凭空消失。
-      return !categories.some((c) => c.id === a.categoryId);
-    });
+    /**
+     * 中间层是**叙事类型**，由资产自己派生，不用用户先把格子建出来。
+     *
+     * 从前这一层全靠手建：归档进来的东西一律先落进「未归类」，用户得自己建一个
+     * 「角色档案」再把它拖过去——而这份产物是哪一类，文件名早就说了（同一张映射表
+     * 任务侧一直在用，见 lib/contentTypes.ts）。让用户重说一遍系统已经知道的事，
+     * 换来的只有一个常年堆满的「未归类」。
+     *
+     * 自建类别没有取消：主表允许用户在项目下开自己的类别，那是跨叙事类型的归拢
+     * （「给美术的那批」这种），不是对叙事类型的替代。两者的优先级也因此定下来——
+     * 显式放进自建类别的按自建走，剩下的按叙事类型落位，两边都认不出的才进未归类。
+     */
+    const customIds = new Set(categories.map((c) => c.id));
+    // 花名册改名或用户删了自建类别后，孤儿资产退回按叙事类型归位而不是凭空消失。
+    const loose = opened.assets.filter(
+      (a) => a.categoryId === null || !customIds.has(a.categoryId),
+    );
+    const derived = CONTENT_TYPES.map((def) => ({
+      id: `type:${def.id}`,
+      name: t(def.labelKey),
+      assets: loose.filter((a) => classifyContent(a.path) === def.id),
+    })).filter((b) => b.assets.length > 0);
+    // 空的叙事类型不铺：项目是用户的柜子，铺一排空格子在这里比在任务侧更没道理。
+    const uncategorized = loose.filter((a) => classifyContent(a.path) === null);
 
     return (
       <div className="project-panel project-panel--opened">
@@ -403,6 +425,29 @@ export function ProjectVault() {
                 </div>
               )}
 
+              {/* 叙事类型桶：名字来自映射表，所以不给改名与删除——改了就对不上任务侧。 */}
+              {derived.map((b) => {
+                const open = !closedCats.includes(b.id);
+                return (
+                  <div key={b.id} className={`pi-bucket${open ? "" : " is-closed"}`}>
+                    <div className="pi-bucket__title">
+                      <button
+                        type="button"
+                        className="pi-bucket__toggle"
+                        aria-expanded={open}
+                        title={open ? t("entry.fold") : t("entry.unfold")}
+                        onClick={() => toggleCat(b.id)}
+                      >
+                        {open ? <ChevronDown size={11} aria-hidden /> : <ChevronRight size={11} aria-hidden />}
+                        <span>{b.name}</span>
+                      </button>
+                      <em className="pi-bucket__count">{b.assets.length}</em>
+                    </div>
+                    {open && renderAssets(b.assets)}
+                  </div>
+                );
+              })}
+
               {categories.map((c) => {
                 const files = opened.assets.filter((a) => a.categoryId === c.id);
                 const open = !closedCats.includes(c.id);
@@ -454,7 +499,7 @@ export function ProjectVault() {
                 );
               })}
 
-              {/* 中间层由用户自己开：给花名册当选项，也接受自己起的名字。 */}
+              {/* 自建类别：跨叙事类型的归拢（「给美术的那批」），与上面按类型派生的桶并存。 */}
               {!addingCat ? (
                 <button type="button" className="pi-newcat" onClick={() => setAddingCat(true)}>
                   <Plus size={12} aria-hidden />
@@ -490,23 +535,6 @@ export function ProjectVault() {
                       {t("team.cancel")}
                     </button>
                   </div>
-                  {catOptions.length > 0 && (
-                    <>
-                      <p className="pi-hint">{t("vault.categoryOptions")}</p>
-                      <div className="pi-catadd__opts">
-                        {catOptions.map((name) => (
-                          <button
-                            key={name}
-                            type="button"
-                            className="pi-catadd__opt"
-                            onClick={() => submitCategory(name)}
-                          >
-                            {name}
-                          </button>
-                        ))}
-                      </div>
-                    </>
-                  )}
                 </div>
               )}
             </section>

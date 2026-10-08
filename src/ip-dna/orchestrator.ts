@@ -23,6 +23,7 @@ import type {
   NarrativeTemplate,
   NarrativeOperator,
   AdaptationDirective,
+  ContentFidelity,
   AdaptationScope,
   AdaptationStatus,
   AdaptationDimensions,
@@ -72,8 +73,9 @@ import {
 import type { QualityCheck } from "./job.js";
 import { saveIpDna, outputRunDir, processingDir, saveOperatorSolution, extractionOutputDir, saveNodeProcessingMarkdown, saveManifest, loadManifest, loadFullIpDna, saveHierarchyIndexOnly, loadStandardizedText, loadHierarchyIndex, loadHierarchyIndexByRun, saveAdaptationDirective, saveIpDnaRunManifest, packageDir } from "./filesystem.js";
 import { buildCorpusRetriever, equipAndConsume } from "./phase3-rag.js";
-import { resolveVnActCount, mapGameUnitToPipeline, buildUnitActMap, representativeGenreForFamily, familyFromTargetOutput, buildSeriesEndingDirective, type PipelineFamily, type GameUnitPipelinePlan } from "./phase2c-gen-adapt.js";
+import { mapGameUnitToPipeline, buildSeriesEndingDirective, type GameUnitPipelinePlan } from "./phase2c-gen-adapt.js";
 import { buildKagFromTemplate, renderRelationInjection } from "./phase3b-kag.js";
+import { accumulateOperators, accumulateTemplates } from "../knowledge/narrative-library/store.js";
 import { buildLedgerFromTemplate, appendLedger, saveLedger, loadLedger, mergeLedger, harvestLedgerFromGenerated, type LongMemoryLedger } from "./phase5-polish.js";
 import { hydrateContextFromSeed, type GenerationSeed } from "./generation-seed.js";
 import { setQueryEmbedder } from "./injection/operator-injection.js";
@@ -123,8 +125,15 @@ export interface IpDnaOrchestratorOptions {
   gameUnitPlan?: GameUnitPlan;
   /** 用户精确选填的改编维度（§4.4 第③步：叙事层级数 + 模板字段），提供则覆盖默认全维度模板。 */
   dimensions?: Partial<AdaptationDimensions>;
-  /** 作者自定义改编补充说明（§5.1 自由文本）：合并进 directive.adaptation_notes 并追加进下游 userInput；空＝忠实转化。 */
+  /** 作者自定义改编补充说明（§5.1 自由文本）：合并进 directive.adaptation_notes 并追加进下游 userInput。 */
   adaptationNotes?: string;
+  /**
+   * 原作在这次改编里算什么（四档，缺省 balanced）。
+   *
+   * 与 `adaptationNotes` 分工：档位说"改多少"，补充说明说"改哪里"。只有 faithful 档
+   * 会把原作结构作为不可改的蓝本（见 fidelity.ts 的 sourceStructureIsBinding）。
+   */
+  contentFidelity?: ContentFidelity;
 
   // 接缝
   /** 提取用 LLM；提供则默认走 LLM 提取，否则确定性兜底。 */
@@ -161,8 +170,6 @@ export interface IpDnaOrchestratorOptions {
   generate?: GenerationRunner;
 
   // 生成控制
-  /** 管线家族（rpg=层级树管线 / vn=互动影游管线）；决定节点控制映射方式。默认 rpg。 */
-  pipelineFamily?: PipelineFamily;
   /** 是否真正跑生成管线（默认 true；false 则只产出 IP DNA + 指令 + 生成输入）。 */
   runGeneration?: boolean;
   /** 超体量时是否执行拆解闭环（按标记边界拆块；§7.1）。默认 false：不拆，整篇处理。 */
@@ -207,7 +214,7 @@ export interface GameUnitResult {
   operatorSolution?: OperatorSolution;
   /** KAG 关系网络注入简报（injectRelations 时）。 */
   relationBrief?: string;
-  /** Phase2c 管线适配计划（节点控制：RPG target_structure / VN 开放幕数）。 */
+  /** Phase2c 管线适配计划（节点控制：RPG node_budget_override / VN 开放幕数）。 */
   pipelinePlan?: GameUnitPipelinePlan;
 }
 
@@ -511,6 +518,7 @@ export async function runExtractAndGenerate(
     gameUnitPlan: options.gameUnitPlan,
     dimensions: options.dimensions,
     adaptationNotes: options.adaptationNotes,
+    contentFidelity: options.contentFidelity,
   });
   // 改编指令落盘（§4.4 续跑/审阅）。
   try { saveAdaptationDirective(directive, title, { cwd: options.cwd }); } catch { /* 落盘失败不阻断主链 */ }
@@ -616,39 +624,15 @@ export async function runExtractAndGenerate(
     }
     const generationInput = buildGenerationInput(topTemplate, { storyTitle: title, sourceText });
 
-    // Phase2c（§4.6）：把游戏单元映射到生成管线节点控制——
-    //   RPG → global_control_params.target_structure（层级节点数控制）；
-    //   VN  → vn_target_act_count（开放幕数）。
-    // P0-1（§4.4d 目标输出形态锁定）：family 优先显式参数 → target_output 反推 → 缺省 vn。
-    // IP 改编旗舰场景 = 互动叙事(影游/VN)，不再默认漂移到 rpg（修"上传小说想做影游却跑成 JRPG"）。
-    const family: PipelineFamily =
-      options.pipelineFamily ??
-      familyFromTargetOutput(directive.game_unit_plan.target_output) ??
-      "vn";
-    const pipelinePlan = mapGameUnitToPipeline(unit, directive.game_unit_plan.mode, {
-      family,
+    // Phase2c（§4.6）：把游戏单元映射到生成期节点预算。
+    //
+    // 不再先判"管线家族"再二选一。家族曾在这里决定 RPG 走层级节点预算、VN 走开放幕数，
+    // 但幕那一侧的读取者已随 tpl-vn-v2 封存（见 GameUnitPipelinePlan 注释），而缺省家族
+    // 正是 VN —— 于是缺省路径算出来的是一个没人读的幕数，真正该生效的节点预算反倒被
+    // `family === "rpg"` 挡在外面。改编选了多大的体量，生成期就拿不到。
+    const pipelinePlan = mapGameUnitToPipeline(unit, {
       defaultComplexity: options.targetComplexity,
-      unitCount: leafIds.length, // P1-1：VN 开放幕数 = 源单元数（章→幕锚定）。
     });
-
-    // P1-1（§5.1b 章→幕锚定）：VN 家族构建"幕↔源最小叙事单元"映射，让每幕忠实对应源作章节、
-    // 按其事件脉络密度展开，修"E2 自由重切丢原文 + per-unit 提取被浪费"。仅 VN 构建；RPG/普通 VN 无此字段。
-    const unitActMap =
-      family === "vn"
-        ? buildUnitActMap(
-            leafIds.map((id) => {
-              const n = dna.nodes[id];
-              const s = n?.template?.summary;
-              return {
-                id,
-                title: n?.title ?? id,
-                summary: s?.events ?? "",
-                characters: s?.characters ?? [],
-                scene: s?.scene ?? "",
-              };
-            }),
-          )
-        : undefined;
 
     // KAG 关系网络注入（§8）：构图 → 简报 → 追加到用户输入 + 落盘图谱。
     let relationBrief: string | undefined;
@@ -690,11 +674,7 @@ export async function runExtractAndGenerate(
       userInput: finalUserInput,
       uploadedScript: generationInput.uploadedScript,
       complexity: pipelinePlan.complexity,
-      family,
-      targetStructure: family === "rpg" ? pipelinePlan.targetStructure : undefined,
-      // 幕数与幕锚定映射一致（章→幕）：有 map 时以 map 幕数为准，否则回退管线派生。
-      vnActCount: unitActMap?.acts.length ?? pipelinePlan.vnActCount ?? resolveVnActCount(unit.targetNodeCount ?? 25),
-      unitToActMap: unitActMap,
+      nodeBudgetOverride: pipelinePlan.nodeBudgetOverride,
       relationNetwork: relationBrief,
     };
     const seedContext = hydrateContextFromSeed(seed);
@@ -721,6 +701,35 @@ export async function runExtractAndGenerate(
   // 续跑加载（§10 h9）：并入既有账本历史条目（按 ref 去重），保证多次运行约束累积不丢。
   mergeLedger(ledger, loadLedger(story_timestamp, title, { cwd: options.cwd }));
   saveLedger(ledger, { cwd: options.cwd });
+
+  // ── 跨作品积累（主表 4.2.1 / 4.2.2）：把这一部提炼出的模板与算子记进库 ──
+  //
+  // 放在这里而不是提炼那一步里面：入库要的是**整部作品**提出来的东西，逐节点入库
+  // 会把同一条手法在同一部作品里记上十几遍，而印证数要回答的是"几部作品独立得出
+  // 同一结论"。库文件写不进去（只读挂载、磁盘满）不该让改编失败——积累是副产物，
+  // 主线交付的是这次的 DNA 与生成物。
+  try {
+    const librarySource = { storyId: story_timestamp, title };
+    const opStats = accumulateOperators(
+      gameUnits.flatMap((gu) => gu.operatorPool),
+      librarySource,
+      { cwd: options.cwd },
+    );
+    const tplStats = accumulateTemplates(
+      gameUnits.map((gu) => gu.topTemplate),
+      librarySource,
+      { cwd: options.cwd },
+    );
+    emit({
+      phase: "mapping",
+      message:
+        `入库：算子 +${opStats.added} 新 / ${opStats.corroborated} 印证，`
+        + `模板 +${tplStats.added} 新 / ${tplStats.corroborated} 印证`,
+      ratio: 0.62,
+    });
+  } catch (err) {
+    console.warn("[IP DNA] 叙事库入库失败，本次提炼不受影响:", err);
+  }
 
   // ── 三视角算子装备 + 一步消费（可选；接 knowledge_base 语料，落算子方案 §6.4/§7.2b）──
   if (options.equipOperators && options.llm) {
@@ -828,40 +837,46 @@ export async function runIpDnaPipeline(options: IpDnaOrchestratorOptions): Promi
 // ─────────────────────────────────────────────────────────────────
 
 /**
+ * IP 改编未指定品类时的缺省品类。
+ *
+ * 缺省落在互动叙事而不是 JRPG：上传小说想做影游、却因为编排器不带 genre_code 而退化到
+ * `rpg-jrpg` 的层级链，是这条链上最常见的走错。它只是缺省值 —— 调用方显式选了品类就用
+ * 那个，117 个品类都是平等的目标形态。
+ */
+export const DEFAULT_ADAPTATION_GENRE = "adv-interactive";
+
+/**
  * 由编排器选项 + 生成种子构建生成期 PipelineConfig（纯函数，可单测）。
  *
- * Phase 2c（§4.6）核心接缝：让改编选定的管线家族真正驱动生成模板链。
- * 否则生成默认 design_auto 模式下模板由 genre_code 解析，而编排器不带 genre_code
- * 会退化为 rpg-jrpg→tpl-rpg，使 vn 家族内容仍误跑 RPG 层级链。
- * 把 family 映射到规范代表品类（vn→adv-interactive→tpl-vn-v2），且不覆盖调用方显式指定。
+ * 不再接"管线家族"：品类直接往下传。家族曾在这里把用户选的品类压成 rpg / vn 两个桶，
+ * 再从桶里取一个代表品类展开回去 —— 117 个品类压成 2 个，中途丢掉的正是用户的选择。
  *
  * 注意：不含 resumeCtx（不可序列化、与运行时耦合），由调用方水合后并入。
  */
 export function buildGenerationPipelineConfig(
   options: Pick<IpDnaOrchestratorOptions, "pipelineConfig" | "tier" | "generationMode">,
-  family: PipelineFamily,
 ): PipelineConfig {
   const base: PipelineConfig = { ...(options.pipelineConfig ?? {}) };
-  if (!base.genreCode) {
-    const repGenre = representativeGenreForFamily(family);
-    if (repGenre) base.genreCode = repGenre;
-  }
-  // P0-1（§4.4d）：VN 家族缺省 = 纯互动叙事 vn_full——未显式指定或仅为通用 design_auto 时锁定 vn_full
-  // （不跑 D0-D4 策划文档）；显式 vn_full / design_vn_full 等 VN 模式则尊重不覆盖。修"IP 改编跑成 design_auto"。
-  const resolvedMode = options.generationMode ?? base.mode;
-  const mode =
-    family === "vn" && (!resolvedMode || resolvedMode === "design_auto") ? "vn_full" : resolvedMode;
+  if (!base.genreCode) base.genreCode = DEFAULT_ADAPTATION_GENRE;
+  // mode 不按家族锁定。这里曾把 VN 家族锁到 `vn_full`（不跑 D0-D4 策划文档），但那四条
+  // 影游专属 mode 已随 C1（2026-08）整体退役 —— 它们靠 `pipeline_template: tpl-vn-v2`
+  // 把作用域焊死在影游专属实现上，而新架构里不管 RPG 还是影游都不再有"幕"，形态差异
+  // 由叙事结构轴的策略卡表达（见 narrative-pipelines.ts 的 pl-film-game）。
+  //
+  // 锁定留在这里的后果不是跑错管线，是跑不起来：`vn_full` 还在 ModeId 联合里，却已不在
+  // MODE_CONFIGS 中，于是 getModeConfig 抛 `Unknown mode: vn_full`。而 vn 正是 IP 改编的
+  // 缺省家族，所以这条路径是缺省路径。品类自己会路由到 pl-film-game，不需要 mode 代劳。
   return {
     ...base,
     tier: options.tier ?? base.tier,
-    mode,
+    mode: options.generationMode ?? base.mode,
   };
 }
 
 function defaultGenerationRunner(options: IpDnaOrchestratorOptions): GenerationRunner {
   return async ({ userInput, uploadedScript, seed }) => {
     const pipeline = new NarrativePipeline({
-      ...buildGenerationPipelineConfig(options, seed.family),
+      ...buildGenerationPipelineConfig(options),
       // NarrativePipeline 从类型化种子契约显式水合 ctx（T4）。
       resumeCtx: hydrateContextFromSeed(seed),
       // 下游逐步进度桥接（§图2）：提供 onGenerationProgress 时把生成管线进度透出，

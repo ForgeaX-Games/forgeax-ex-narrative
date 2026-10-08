@@ -29,12 +29,15 @@ export type { StoryThemeCode, StoryThemeEntry } from "./story-themes.js";
 export {
   STORY_STRUCTURE_CODES,
   STORY_STRUCTURES,
+  NEUTRAL_TOPOLOGY,
   getStoryStructure,
+  getStructureTopology,
   isStoryStructureCode,
 } from "./story-structures.js";
 export type {
   StoryStructureCode,
   StoryStructureEntry,
+  StructureTopology,
   StrategyStage,
 } from "./story-structures.js";
 
@@ -46,6 +49,9 @@ export type {
   ResolvedStructure,
   StructureVotingAxis,
 } from "./resolve-structure.js";
+
+export { deriveAxesFromTags, resolveUserAxes } from "./tag-axis-mapping.js";
+export type { NarrativeTagSelection, TagDerivedAxes } from "./tag-axis-mapping.js";
 
 /** 策略卡的四个轴，顺序即提示词 strategy 槽下四个子槽的装配顺序。 */
 export const STRATEGY_AXES = ["genre", "type", "theme", "structure"] as const;

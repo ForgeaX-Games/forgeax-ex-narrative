@@ -11,7 +11,7 @@
  *   须语义  边的条件（凭什么走这条路）、代价、人设倾向、结局分档与达成条件
  *           —— 这些要读懂剧情才能给，只能由模型给。
  *   只报告  语义项缺失
- *           —— 见 node-function.checkNodeFunctions。代码不编造 H/B/O，
+ *           —— 见 node-function.checkNodeFunctions。代码不编造结局分档，
  *              宁可让结构检查报「结局未给达成条件」，也不要塞一个假的分档。
  *
  * 这样分工的直接好处：历史产物（没有任何树字段）跑一遍归一化就能补齐拓扑部分，
@@ -52,19 +52,18 @@ const CHOICE_LABELS = "ABCDEFGH";
 /**
  * 一条边的走向类型。
  *
- * 判定次序要紧：先看目标是不是结局、再看是不是汇点，最后才看本节点是否分叉。
- * 反过来的话，「分叉出去的一条边直接进结局」会被标成 choice 而不是 ending，
- * 下游读 kind 决定怎么渲染分支时就会把结局画成普通选项。
+ * 不再有「结局边」这一档，所以也不再有次序两难：从前判定次序必须在「目标是结局」与
+ * 「本节点在分叉」之间选一个优先，而两种次序各丢一半信息（见 `NodeEdge.kind`）。
+ * 结局性由目标节点自己的出度表达，边只说走法。
  */
 function edgeKind(
   node: TreeShapeNode,
   target: TreeShapeNode | undefined,
 ): NodeEdge["kind"] {
-  if (!target) return "linear";
-  if (target.next_node.length === 0) return "ending";
-  if (target.prev_node.length > 1) return "merge_back";
-  if (node.next_node.length > 1) return "choice";
-  return "linear";
+  if (!target) return "continue";
+  if (target.prev_node.length > 1) return "merge";
+  if (node.next_node.length > 1) return "choose";
+  return "continue";
 }
 
 /**
@@ -110,7 +109,7 @@ export function deriveTreeFields(
     const edges: NodeEdge[] = node.next_node.map((to, i) => {
       const kind = edgeKind(node, index.get(to));
       const edge: NodeEdge = { to, kind };
-      if (kind === "choice") edge.label = CHOICE_LABELS[i] ?? String(i + 1);
+      if (kind === "choose") edge.label = CHOICE_LABELS[i] ?? String(i + 1);
       return edge;
     });
 
@@ -155,10 +154,15 @@ export function treeSemanticsPromptSpec(nodes: readonly TreeShapeNode[]): string
   if (endings.length > 0) {
     parts.push(`### 结局节点：${endings.map((n) => n.node_id).join("、")}
 每个结局节点追加：
-- ending: { "label": "H 圆满 | B 悲剧 | O 其他（开放/反转/隐藏）",
+- ending: { "kind": "good 圆满 | bad 悲剧 | neutral 无明确落点（含开放结局）",
     "scope": "global 全剧终 | local 局部结局（中途失败、提前圆满）", "trigger": "达成条件" }
 
-scope 必须分清：中途 game over 是 local，全剧终才是 global。
+两维必须分清：
+- kind 说的是**情感落点**。反转结局与隐藏结局按它落在好还是坏来判，不要往 neutral 塞——
+  隐藏说的是"要满足条件才走到"，那是可达性，与好坏是两回事（可达性写进 trigger）。
+  neutral 只留给真正没有明确落点的结局，比如开放式收尾。
+- scope 说的是**是否全剧终**。中途 game over 是 local，全剧终才是 global。
+
 结局节点的内容必须正面回应核心冲突，不能只写"后来怎样了"。`);
   }
 
@@ -191,7 +195,7 @@ export function mergeTreeSemantics(
     node_function: derived.node_function,
     edges,
     branch_type: semantics?.branch_type ?? derived.branch_type,
-    // 结局分档不推导：H/B/O 与 local/global 都要读懂剧情才知道，
+    // 结局分档不推导：情感落点与 local/global 都要读懂剧情才知道，
     // 编一个默认值等于让结构检查检不出「结局没交代」。
     ending: semantics?.ending,
   };

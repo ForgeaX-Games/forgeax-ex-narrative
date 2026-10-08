@@ -8,8 +8,9 @@ import type { NarrativeType } from "../genre-narrative-type.js";
  * 数据源：产品侧叙事策划专家组配置表的「叙事结构」列，
  * 按专家名逐条对到 genre-taxonomy 的 code 上。第一项为该品类的首选结构。
  *
- * 这是三轴里唯一已定稿的结构倾向 —— 叙事类型与叙事题材两轴的对应列在表里还是空的，
- * 所以现阶段结构综合几乎总是由品类单轴决定（见 resolve-structure.ts）。
+ * 三轴里权重最高的一轴（并列时按品类 > 类型 > 题材裁决），但不再是唯一有数据的一轴：
+ * 类型与题材的结构倾向已填进 story-types.ts / story-themes.ts，
+ * 所以一个奇幻 JRPG 与一个悬疑 JRPG 会综合出不同的结构。
  */
 export const GENRE_STRUCTURE_HINTS: Readonly<Record<string, readonly StoryStructureCode[]>> = {
   // RPG

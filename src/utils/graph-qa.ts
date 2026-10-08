@@ -135,23 +135,34 @@ function idTokens(id: string): string[] {
     .filter((s) => s.length >= 2);
 }
 
-/** 结局类别码归一：good→GOOD/HE/GE 这类宽匹配，统一收敛成集合。 */
-const ENDING_TYPE_ALIASES: Record<string, string[]> = {
-  GOOD: ["GOOD", "HE", "GE", "TE", "TRUE"],
-  TRUE: ["TRUE", "TE"],
-  HE: ["HE", "GOOD"],
-  BAD: ["BAD", "BE"],
-  BE: ["BE", "BAD"],
-  NEUTRAL: ["NEUTRAL", "NE"],
-  NE: ["NE", "NEUTRAL"],
-  HIDDEN: ["HIDDEN", "HE2", "SE"],
+/**
+ * 结局令牌 → 规范令牌。
+ *
+ * 落点那几行的值域与 `EndingType` 的三值一一对应（大写形式，因为这里比的是从 id 里
+ * 抽出的大写令牌）—— 全仓只有那一套结局分档，这张表是它在 id 令牌域里的投影，不是
+ * 第三套枚举。
+ *
+ * 归一是单向的。这里曾是一张双向别名图（`GOOD: ["GOOD","HE","GE",…]`），靠"一边展开
+ * 成一组"来匹配：于是 `ENDING_GOOD` 与 `N_GE` 能配上，而 `ENDING_GE` 与 `N_HE` 配不上
+ * —— `GE` 没有自己的展开行。两边都先归一就不存在这个不对称。
+ *
+ * `HIDDEN` 一组是**可达性**，不是落点：一个隐藏的悲剧同时是 HIDDEN 与 BAD，两者各归
+ * 一维。混进落点档会让它无处可去。
+ */
+const CANONICAL_ENDING_TOKEN: Readonly<Record<string, string>> = {
+  GOOD: "GOOD", HE: "GOOD", GE: "GOOD", TE: "GOOD", TRUE: "GOOD",
+  BAD: "BAD", BE: "BAD",
+  NEUTRAL: "NEUTRAL", NE: "NEUTRAL", OPEN: "NEUTRAL", OE: "NEUTRAL",
+  HIDDEN: "HIDDEN", HE2: "HIDDEN", SE: "HIDDEN",
 };
 
 function nodeTokens(n: QaNode): Set<string> {
   const set = new Set<string>(n.tokens?.map((t) => t.toUpperCase()) ?? []);
   for (const t of idTokens(n.id)) {
+    // 原令牌一并留着：id 里的非结局词（场次、道具名）也参与配对打分。
     set.add(t);
-    for (const alias of ENDING_TYPE_ALIASES[t] ?? []) set.add(alias);
+    const canonical = CANONICAL_ENDING_TOKEN[t];
+    if (canonical) set.add(canonical);
   }
   return set;
 }

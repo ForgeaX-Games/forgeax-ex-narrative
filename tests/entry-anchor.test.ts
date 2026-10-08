@@ -29,9 +29,27 @@ describe("需求入口节点 · 锚点不变式", () => {
     expect(isEntryNode(entryNode())).toBe(true);
   });
 
-  it("三输入模式与三轴的 config 键齐备（默认直接输入、三轴自动）", () => {
+  it("目录里两枚输入条目，对应两条入口", () => {
+    // 曾是三枚（直接输入 / 标签选择 / 文件上传）。前两枚是同一条入口的两半 —— 需求
+    // 文本与标签六维并存，不是二选一 —— 分成两枚节点等于把那个互斥摆进目录：用户拖了
+    // "直接输入"，标签那一半便无处可填。
+    expect(findCatalogItem("input.authored")?.defaultConfig?.inputTab).toBe("authored");
+    expect(findCatalogItem("input.adapted")?.defaultConfig?.inputTab).toBe("adapted");
+    expect(findCatalogItem("input.text")).toBeUndefined();
+    expect(findCatalogItem("input.tags")).toBeUndefined();
+  });
+
+  it("自己描述那枚同时带需求文本与标签两半的 config 键", () => {
+    // 并存的机械体现：一枚节点上两半都有住所。少了任一半，那一半就没地方存。
+    const cfg = findCatalogItem("input.authored")!.defaultConfig!;
+    expect(cfg).toHaveProperty("userInput");
+    expect(cfg).toHaveProperty("tagSelections");
+    expect(cfg).toHaveProperty("tagCustomTexts");
+  });
+
+  it("两条入口与三轴的 config 键齐备（默认自己描述、三轴自动）", () => {
     const cfg = entryNode().config;
-    expect(cfg.inputTab).toBe("text");
+    expect(cfg.inputTab).toBe("authored");
     expect(cfg).toHaveProperty("userInput");
     expect(cfg).toHaveProperty("tagSelections");
     expect(cfg).toHaveProperty("tagCustomTexts");

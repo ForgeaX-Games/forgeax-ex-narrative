@@ -88,10 +88,30 @@ export interface RunManifestConfig {
   storyType?: string | null;
   /** 叙事题材轴 code（职场/校园/…），见 knowledge/narrative-axes/story-themes.ts */
   storyTheme?: string | null;
+  /**
+   * 标签选择。类型/题材两轴为空时由它兜底推导（deriveAxesFromTags），
+   * 让标签输入路径也能参与结构投票。
+   */
+  tags?: { selections?: Record<string, string>; customTexts?: Record<string, string> };
   /** 叙事结构：由三轴综合推导写回，或用户显式指定 */
   narrativeStructure?: string | null;
   /** 结构结论的来源，供 UI 标注是自动推导还是用户指定 */
   structureSource?: "explicit" | "vote" | "none";
+  /**
+   * 结构推导的全过程，落盘供 UI 回答「为什么是这个结构」。
+   *
+   * 投票器一直在返回这两样（resolve-structure.ts 的注释写明「用于 UI 展示为什么是它」），
+   * 但从前只有结论进 manifest，过程原地丢弃 —— 于是产品要的「多方维度比较」
+   * 在界面上完全看不见，用户只看到一个没有来由的结论。
+   */
+  structureRationale?: {
+    /** 参与综合的全部候选，按得票降序。 */
+    candidates?: string[];
+    /** 各轴给出的倾向原样回传：品类 / 类型 / 题材。 */
+    byAxis?: Record<string, string[]>;
+    /** 类型/题材若由标签兜底而来，记下命中的标签维与原文。 */
+    tagDerived?: Record<string, { dimension: string; value: string }>;
+  };
   /** 叙事体量档位（1-5）。UI 上叫「叙事体量」，字段名沿用 complexity 不动。 */
   complexity?: number;
   routeGroup?: "planning" | "narrative";

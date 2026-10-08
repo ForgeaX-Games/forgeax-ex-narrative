@@ -6,7 +6,8 @@
  */
 import { randomUUID } from "node:crypto";
 import { findGenreByCode } from "../../knowledge/genre-taxonomy.js";
-import { resolveNarrativeStructure } from "../../knowledge/narrative-axes/index.js";
+import { resolveNarrativeStructure, resolveUserAxes } from "../../knowledge/narrative-axes/index.js";
+import type { ResolvedStructure, TagDerivedAxes } from "../../knowledge/narrative-axes/index.js";
 import type { ModeId, TierId, ContentLocale } from "../../types/index.js";
 import {
   type RunManifest,
@@ -44,6 +45,34 @@ export interface PlanManifestRequest {
 
 function agentName(id: string): string {
   return getNarrativeAgent(id)?.name ?? STEP_REGISTRY.get(id)?.name ?? id;
+}
+
+/**
+ * 把投票过程整理成可落盘、可展示的形状。
+ *
+ * 只在真有内容时写字段：显式指定结构的条目没有"比较过程"可讲，
+ * 塞一个只含自己的 candidates 数组反而让 UI 误以为发生过一次投票。
+ */
+export function buildStructureRationale(
+  structure: ResolvedStructure,
+  derived: TagDerivedAxes,
+): RunManifestConfig["structureRationale"] {
+  const byAxis: Record<string, string[]> = {};
+  for (const [axis, codes] of Object.entries(structure.byAxis)) {
+    if (codes.length > 0) byAxis[axis] = [...codes];
+  }
+  const tagDerived: Record<string, { dimension: string; value: string }> = {};
+  if (derived.hits.storyType) tagDerived.storyType = derived.hits.storyType;
+  if (derived.hits.storyTheme) tagDerived.storyTheme = derived.hits.storyTheme;
+
+  const rationale: NonNullable<RunManifestConfig["structureRationale"]> = {};
+  if (structure.source === "vote" && structure.candidates.length > 0) {
+    rationale.candidates = [...structure.candidates];
+  }
+  if (Object.keys(byAxis).length > 0) rationale.byAxis = byAxis;
+  if (Object.keys(tagDerived).length > 0) rationale.tagDerived = tagDerived;
+
+  return Object.keys(rationale).length > 0 ? rationale : undefined;
 }
 
 function agentPrototype(id: string) {
@@ -269,11 +298,17 @@ export function buildRunManifest(req: PlanManifestRequest): RunManifest {
     cfg.tier ??
     "tier1") as TierId;
 
-  // 三轴综合出叙事结构，结论写回 config 供提示词层与前端读取。
-  const structure = resolveNarrativeStructure({
-    genreCode,
+  // 三轴综合出叙事结构，结论**与推导过程**一并写回 config 供提示词层与前端读取。
+  // 类型/题材先按「直选优先、标签兜底」定下来再投票，与 /start 同口径。
+  const userAxes = resolveUserAxes({
     storyType: cfg.storyType,
     storyTheme: cfg.storyTheme,
+    tags: cfg.tags,
+  });
+  const structure = resolveNarrativeStructure({
+    genreCode,
+    storyType: userAxes.storyType,
+    storyTheme: userAxes.storyTheme,
     explicit: cfg.narrativeStructure,
   });
   const pipelineTemplate = (cfg.pipelineTemplate ??
@@ -328,10 +363,11 @@ export function buildRunManifest(req: PlanManifestRequest): RunManifest {
       ...cfg,
       tier,
       genreCode: genreCode ?? null,
-      storyType: cfg.storyType ?? null,
-      storyTheme: cfg.storyTheme ?? null,
+      storyType: userAxes.storyType,
+      storyTheme: userAxes.storyTheme,
       narrativeStructure: structure.structure,
       structureSource: structure.source,
+      structureRationale: buildStructureRationale(structure, userAxes.derived),
       pipelineTemplate: templateCode,
       mode: (cfg.mode ?? null) as ModeId | null,
       locale: (cfg.locale ?? "zh") as ContentLocale,

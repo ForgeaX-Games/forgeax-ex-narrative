@@ -4,7 +4,7 @@
  * 这里锁的是新架构的叙事内核——大纲定叙事单元、结构展开成剧情树、情节填节点内容，
  * 对所有品类同构；剧情树的形态差异由叙事策略的结构轴决定，而非由品类另开管线实现。
  *
- * 其中「条件挂在边上」「merge_back 显式标聚合」「分支代价档」「结局分 local/global」
+ * 其中「条件挂在边上」「merge 边显式标聚合」「分支代价档」「结局分 local/global」
  * 四件形制是从归档影游实现迁进来的既有设计，非新造。本文件同时锁住迁移的正确性：
  * 归档产物与新产物必须走同一批规则。
  */
@@ -18,7 +18,7 @@ import { PLOT_GENERATION_COMPOSER } from "../steps/plot-generation.js";
 
 const choice = (to: string, label: string): NodeEdge => ({
   to,
-  kind: "choice",
+  kind: "choose",
   label,
   condition: { type: "choice", description: `选了 ${label}`, cost: "损失一名同伴" },
 });
@@ -58,7 +58,7 @@ describe("边级条件（形制取自归档影游 VnNextEdge）", () => {
         prev: ["n2"],
         next: ["n4", "n5"],
         branchType: "converge",
-        edges: [choice("n4", "A"), { to: "n5", kind: "choice", label: "B" }],
+        edges: [choice("n4", "A"), { to: "n5", kind: "choose", label: "B" }],
       },
     ]);
     const missing = issues.filter((i) => i.kind === "missing_condition");
@@ -81,23 +81,23 @@ describe("边级条件（形制取自归档影游 VnNextEdge）", () => {
 
   it("edges 与 next_node 指向不同批目标时报不一致——下游读哪个都不对", () => {
     const issues = checkNodeFunctions([
-      { id: "n1", prev: ["n0"], next: ["n2"], edges: [{ to: "n9", kind: "linear" }] },
+      { id: "n1", prev: ["n0"], next: ["n2"], edges: [{ to: "n9", kind: "continue" }] },
     ]);
     expect(issues.some((i) => i.kind === "edge_mismatch")).toBe(true);
   });
 
-  it("聚合必须由上游的 merge_back 边显式标出，而非靠入度事后推断", () => {
+  it("聚合必须由上游的 merge 边显式标出，而非靠入度事后推断", () => {
     const withoutMerge = checkNodeFunctions([
-      { id: "a", prev: [], next: ["m"], edges: [{ to: "m", kind: "linear" }] },
-      { id: "b", prev: [], next: ["m"], edges: [{ to: "m", kind: "linear" }] },
-      { id: "m", prev: ["a", "b"], next: ["z"], edges: [{ to: "z", kind: "linear" }] },
+      { id: "a", prev: [], next: ["m"], edges: [{ to: "m", kind: "continue" }] },
+      { id: "b", prev: [], next: ["m"], edges: [{ to: "m", kind: "continue" }] },
+      { id: "m", prev: ["a", "b"], next: ["z"], edges: [{ to: "z", kind: "continue" }] },
     ]);
     expect(withoutMerge.some((i) => i.nodeId === "m" && i.kind === "missing_condition")).toBe(true);
 
     const withMerge = checkNodeFunctions([
-      { id: "a", prev: [], next: ["m"], edges: [{ to: "m", kind: "merge_back" }] },
-      { id: "b", prev: [], next: ["m"], edges: [{ to: "m", kind: "linear" }] },
-      { id: "m", prev: ["a", "b"], next: ["z"], edges: [{ to: "z", kind: "linear" }] },
+      { id: "a", prev: [], next: ["m"], edges: [{ to: "m", kind: "merge" }] },
+      { id: "b", prev: [], next: ["m"], edges: [{ to: "m", kind: "continue" }] },
+      { id: "m", prev: ["a", "b"], next: ["z"], edges: [{ to: "z", kind: "continue" }] },
     ]);
     expect(withMerge.some((i) => i.nodeId === "m")).toBe(false);
   });

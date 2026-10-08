@@ -65,8 +65,11 @@ describe("batch5: A→B 映射补全 scene_map/item_database/story_framework", (
 
   it("mapTemplateToContext 由 plot_tree 构建 story_framework + 初始大纲结构", () => {
     const ctx = mapTemplateToContext(templateWithPlot("1.1"), { user_input: "", story_title: "冰封" });
-    expect(ctx.story_framework?.framework.nodes.length).toBe(2);
-    expect(ctx.story_framework?.framework.nodes[0].node_id).toBe("1.1");
+    // L0 按场聚合：这棵树两个节点同属场 "1"，所以是一章而不是两章。
+    // 最小叙事单元的粒度归 L1（plotTreeToStructureSeat），不归 L0 —— 否则 25 个节点
+    // 的原作会得到 25 章的 L0，而 L0 预算最宽只有 15。
+    expect(ctx.story_framework?.framework.nodes.length).toBe(1);
+    expect(ctx.story_framework?.framework.nodes[0].node_id).toBe("1");
     expect(ctx.initial_story_outline?.story_structure.opening).toContain("起");
     expect(ctx.initial_story_outline?.story_structure.ending).toContain("终");
   });

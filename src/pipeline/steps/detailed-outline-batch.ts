@@ -18,6 +18,7 @@ import type {
   NarrativeContext,
   DetailedOutlinesGenerated,
   DetailedOutlineNode,
+  OutlineNode,
 } from "../../types/index.js";
 import type { LLMClient } from "../runtime/llm-client.js";
 import { extractJSON } from "../runtime/llm-client.js";
@@ -51,6 +52,7 @@ import {
   getNodeBudget,
   getTargetBranchRatio,
   getMergeTendency,
+  structureTopology,
   type StructurePlanItem,
 } from "../runtime/layer-threshold-config.js";
 import { deviationFromLegacy } from "../../types/index.js";
@@ -199,7 +201,7 @@ function buildStep1Prompt(ctx: NarrativeContext): string {
   const layerEntropy = getLayerEntropy(entropy, 2, l2Ctrl);
   const deviation = deviationFromLegacy(gcp);
 
-  const branchSection = buildBranchPromptSection(2, complexity, layerEntropy);
+  const branchSection = buildBranchPromptSection(2, complexity, layerEntropy, structureTopology(ctx));
   const deviationSection = buildDeviationPrompt(deviation);
   const nodeCountSection = buildNodeCountPromptSection(2, layerEntropy, l2Ctrl?.min_nodes, l2Ctrl?.max_nodes, complexity);
 
@@ -355,6 +357,77 @@ interface PartialFill extends TreeSemantics {
     atmosphere: string;
   };
   content: string;
+}
+
+/**
+ * 注入骨架的取用：按本次要处理的 L1 父节点过滤，与常规路径同一口径。
+ * 筛空了返回 null 而不是空数组 —— 那说明注入骨架的父指针与本次的 L1 节点对不上，
+ * 退回常规规划比产出一棵空树可诊断。
+ */
+function injectedL2Skeleton(
+  ctx: NarrativeContext,
+  outlines: OutlineNode[],
+): DetailedOutlineNode[] | null {
+  const seed = ctx.injected_structure_seed?.detailedOutlines;
+  if (!seed || seed.length === 0) return null;
+  const parents = new Set(outlines.map((o) => o.node_id));
+  const mine = seed.filter((d) => parents.has(d.parent_id));
+  return mine.length > 0 ? mine : null;
+}
+
+/**
+ * 注入模式的内容填充（与 L1 同一姿态，见 outline-batch.ts 的 fillInjectedOutlines）。
+ *
+ * 只跑双向一致化，不跑其余五步修复：那些是为「LLM 规划的骨架可能不自洽」设计的，
+ * 对确定性映射出来的骨架，修复就是篡改。最优路径也直接取注入值 —— 原作标了主线，
+ * 不必再靠"同一分岔取首支"去猜。
+ */
+async function fillInjectedDetails(
+  ctx: NarrativeContext,
+  llm: LLMClient,
+  injected: DetailedOutlineNode[],
+): Promise<void> {
+  const asSkeleton: SkeletonNode[] = injected.map((d, i) => ({
+    node_id: d.node_id,
+    parent_id: d.parent_id,
+    sequence_index: i,
+    is_branch: d.node_function === "branch",
+    is_merge_point: d.node_function === "merge",
+    prev_node: d.prev_node,
+    next_node: d.next_node,
+  }));
+  const consistent = ensureBidirectionalConsistency(asSkeleton);
+  const connOf = new Map(consistent.map((s) => [s.node_id, s]));
+
+  const fillMap = await step1_5_batchFill(ctx, llm, consistent);
+
+  const detailedOutlines: DetailedOutlineNode[] = injected.map((src) => {
+    const fill = fillMap.get(src.node_id);
+    const se = fill?.story_elements;
+    const conn = connOf.get(src.node_id);
+    return {
+      ...src,
+      content_id: `do_${src.node_id}`,
+      name: fill?.name ?? src.name,
+      narrative_stage: fill?.narrative_stage ?? src.narrative_stage ?? "rising",
+      prev_node: conn?.prev_node ?? src.prev_node,
+      next_node: conn?.next_node ?? src.next_node,
+      story_elements: {
+        plot: {
+          cause: se?.plot?.cause ?? "",
+          process: se?.plot?.process ?? "",
+          result: se?.plot?.result ?? "",
+        },
+        dialogue_hint: se?.dialogue_hint ?? "",
+        monologue_hint: se?.monologue_hint ?? "",
+        narration_hint: se?.narration_hint ?? "",
+        atmosphere: se?.atmosphere ?? "",
+      },
+      content: fill?.content ?? "",
+    };
+  });
+
+  ctx.detailed_outlines_generated = { detailed_outlines: detailedOutlines };
 }
 
 async function step1_5_batchFill(
@@ -572,6 +645,14 @@ export async function detailedOutlineBatch(
     if (outlines.length === 0) return;
   }
 
+  // 注入模式：树已由原作确定性映射而来，跳过规划 LLM 与体量 enforce，只补内容。
+  const injected = injectedL2Skeleton(ctx, outlines);
+  if (injected) {
+    await fillInjectedDetails(ctx, llm, injected);
+    await structureValidationL2(ctx, llm);
+    return;
+  }
+
   // Step 1: 结构规划
   const step1Raw = await llm.callWithRetry(
     composeSystemPrompt(DETAIL_PLAN_COMPOSER, ctx),
@@ -600,8 +681,9 @@ export async function detailedOutlineBatch(
   const entropy = getEntropy(complexity);
   const l2Ctrl = gcp?.layer_controls?.layer_2;
   const layerEntropy = getLayerEntropy(entropy, 2, l2Ctrl);
-  const grossTarget = getTargetBranchRatio(complexity, layerEntropy, 2);
-  const mergeTend = getMergeTendency(complexity, 2);
+  const topology = structureTopology(ctx);
+  const grossTarget = getTargetBranchRatio(complexity, layerEntropy, 2, topology);
+  const mergeTend = getMergeTendency(complexity, 2, topology);
 
   const olStageMap = new Map(outlines.map(o => [o.node_id, o.narrative_stage]));
   const enforceable: StructurePlanItem[] = rawPlans.map((p) => ({
@@ -611,9 +693,9 @@ export async function detailedOutlineBatch(
     should_merge: p.should_merge,
     narrative_stage: p.narrative_stage ?? olStageMap.get(p.parent_id),
   }));
-  const enforced = enforceBranchInPlan(enforceable, grossTarget, mergeTend, 2);
+  const enforced = enforceBranchInPlan(enforceable, grossTarget, mergeTend, 2, topology);
 
-  const l2Max = gcp?.target_structure?.l2_per_parent ?? l2Ctrl?.max_nodes;
+  const l2Max = gcp?.node_budget_override?.l2_per_parent ?? l2Ctrl?.max_nodes;
   const clamped = clampChildCount(enforced, 2, layerEntropy, l2Ctrl?.min_nodes, l2Max, complexity);
 
   const plans: DetailPlan[] = rawPlans.map((p, i) => ({
@@ -679,7 +761,7 @@ export async function detailedOutlineBatch(
    *
    * 判据两条都要成立：父节点在最优路径上，且本节点不是某处分岔里没被选中的那一支。
    * 只看自己会把「一条被放弃的支线里的顺流节点」也算成最优路径；只看父节点则会
-   * 把本层新开的分支全算进去。缺了这条链，席位表 2.3.8 要的「标出最符合
+   * 把本层新开的分支全算进去。缺了这条链，席位表 2.5.9 要的「标出最符合
    * 用户需求的那条链路」在 L2 就断了。
    */
   const l1OptimalById = new Map(outlines.map((o) => [o.node_id, o.on_optimal_path !== false]));

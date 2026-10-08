@@ -23,12 +23,12 @@ import {
 } from "../../lib/contentTypes";
 import { seatPrimaryStep } from "../../composer/seats.generated";
 import {
-  collectAsset,
   createProject,
   listProjects,
   subscribeProjects,
   type NarrativeProject,
 } from "../../lib/projectVault";
+import { archiveAsset } from "../../lib/archiveAsset";
 import {
   confirmAsset,
   isConfirmed,
@@ -178,7 +178,8 @@ export function TaskFiles({
    * 确认 / 撤销确认一份产物。
    *
    * 确认是"这一份是定稿，下游生成就引用它"，与收进项目库（归档到哪个柜子）是两件事，
-   * 所以这里不碰 projectVault。版本号只在确认的是历史版那张卡时给：那种情况用户要的
+   * 所以这里不碰 projectVault。反过来收进项目库会顺带确认——蕴含只有那一个方向，
+   * 理由见 lib/archiveAsset.ts。版本号只在确认的是历史版那张卡时给：那种情况用户要的
    * 就是钉住这一稿；折叠卡上的当前版路径本身是稳定的，跟随最新才是他要的。
    */
   const toggleConfirm = useCallback(
@@ -195,11 +196,12 @@ export function TaskFiles({
     async (projectId: string, categoryId: string | null) => {
       const file = collectTarget;
       if (!file) return;
-      await collectAsset(
+      const next = await archiveAsset(
         projectId,
         { taskKey, path: file.path, name: file.name, contentType: file.type },
         categoryId,
       );
+      if (next) setConfirmed(next);
       setCollectTarget(null);
     },
     [collectTarget, taskKey],
@@ -211,11 +213,12 @@ export function TaskFiles({
     const title = prompt(t("vault.newProjectPrompt"));
     if (!title?.trim()) return;
     const project = await createProject(title);
-    await collectAsset(
+    const next = await archiveAsset(
       project.id,
       { taskKey, path: file.path, name: file.name, contentType: file.type },
       null,
     );
+    if (next) setConfirmed(next);
     setCollectTarget(null);
   }, [collectTarget, t, taskKey]);
 

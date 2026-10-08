@@ -65,17 +65,16 @@ describe("执行内核并轨", () => {
    * 触达。executableStepIds() 只枚举 run() 能跑的 step，故它不出现在这份白名单。
    */
   /**
-   * playability_adapt 同理不在这份白名单里，但原因不同：玩法适配席已改 planned
-   * （产品决定暂不接线），实现移入席位 alsoOwns 后不再被 registerSeatAgentDefs
-   * 解析，因此没有 AgentDef 可切——它退回 bridgeStepDescriptor 的 legacy 路径，
-   * 迁移登记仍留在 RUNNER_MIGRATIONS 里等接回，见 runner-migration.test.ts。
+   * playability_adapt 现在**在**这份白名单里。它曾不在，原因是玩法适配席标 planned、
+   * 实现挂在 alsoOwns 上解析不到 AgentDef，只能退回 legacy 路径；随 v4 §2.5.20 转
+   * active 后实现进了 bindings，RUNNER_MIGRATIONS 里那条等接回的登记随即生效。
    */
   const ON_RUNNER = [
     "narrative_card", "character_enrichment", "item_database", "quest_generation",
     // M2 原子迁移（12 席，encyclopedia_retrieval / playability_adapt 见上方说明）
     "preference_summary", "preference_analysis", "initial_plan", "worldview",
     "lore_generation", "content_check",
-    "deai_polish", "plot_refine", "plot_polish",
+    "deai_polish", "plot_refine", "playability_adapt",
     "structure_check",
     // M3 结构表达：story_framework 内部环拆成 SequenceStage（见下方 SEQUENCE_ON_RUNNER）
     "story_framework",
@@ -89,7 +88,7 @@ describe("执行内核并轨", () => {
    * runner-migration.test.ts 用真实分片数据对照 legacy 逐字校验。
    */
   const CHUNKED_ON_RUNNER = [
-    "quest_generation", "deai_polish", "plot_refine", "plot_polish",
+    "quest_generation", "deai_polish", "plot_refine", "playability_adapt",
   ];
 
   /**

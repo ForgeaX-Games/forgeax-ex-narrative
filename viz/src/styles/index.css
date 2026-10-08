@@ -1105,62 +1105,97 @@ body[data-pane="center"] .app-header { display: none; }
    左栏本来就窄，横标签一占就是一整行，竖条只吃一列。 */
 .left-pane {
   display: flex;
+  flex-direction: column;
   min-height: 0;
   height: 100%;
 }
 
-/* 任务管理与项目管理是互斥的两块，不是可以并排看的两样东西：竖条一次只点亮一枚，
-   形状本身就说了"二选一"。右栏那三族工具不冲突、可以叠着用，才排成并列按钮。 */
-.left-rail {
+/* 任务库与项目库并列：双库之间最要紧的动作是把任务里的产物归档进项目，那要两边
+   同时看得见。竖条二选一（曾经的做法）恰好挡住了这两块存在的理由。 */
+.left-pane__shelves {
   display: flex;
   flex-direction: column;
-  gap: var(--fx-ref-space-4);
-  flex-shrink: 0;
-  padding: var(--fx-ref-space-8) var(--fx-ref-space-4);
-  border-right: 1px solid var(--color-divider-subtle);
+  flex: 1;
+  min-height: 0;
 }
 
-.left-rail__btn {
+.left-shelf {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /* 并列不平分：没拿焦点的那一栏仍要看得清列表，所以给 1 份而不是压到最小。 */
+  flex: 1 1 0;
+  border-top: 1px solid var(--color-divider-subtle);
+}
+
+.left-shelf:first-child { border-top: none; }
+
+/* 拿着焦点的那一栏占大头。用户点哪一库就把高度给哪一库，另一库退到陪衬但不消失。 */
+.left-shelf.has-focus { flex: 3 1 0; }
+
+/* 折起来只剩分区头：折叠是临时腾地方，空出的高度归另一栏。 */
+.left-shelf.is-collapsed { flex: 0 0 auto; }
+
+.left-shelf__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  height: var(--pane-band2-h);
+  padding: 0 var(--fx-ref-space-8) 0 var(--fx-ref-space-12);
+}
+
+.left-shelf__title {
+  display: flex;
+  align-items: center;
+  gap: var(--fx-ref-space-6);
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  font-size: var(--text-caption);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  transition: color var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.left-shelf__title:hover { color: var(--color-text-primary); }
+
+/* 焦点那一栏的标题点亮：高度已经说了谁是主栏，颜色让它在扫一眼时先被认出来。 */
+.left-shelf.has-focus .left-shelf__title { color: var(--color-brand-text); }
+
+.left-shelf__count {
+  font-style: normal;
+  font-weight: 500;
+  font-family: var(--font-mono);
+  color: var(--color-text-tertiary);
+  opacity: 0.7;
+}
+
+.left-shelf__fold {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid transparent;
+  width: 22px;
+  height: 22px;
+  border: none;
   border-radius: var(--fx-radius-control);
   background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
-  transition:
-    color var(--motion-duration-fast) var(--motion-ease-out),
-    background var(--motion-duration-base) var(--motion-ease-out),
-    border-color var(--motion-duration-base) var(--motion-ease-out);
 }
 
-.left-rail__btn:hover { color: var(--color-text-primary); }
+.left-shelf__fold:hover { color: var(--color-text-primary); }
 
-.left-rail__btn.is-active {
-  border-color: var(--primary);
-  color: var(--color-brand-text);
-  background: color-mix(in srgb, var(--primary) 10%, transparent);
-}
-
-/* 第三层（左栏）：当前这一块的名字。切换动作归竖条，这一行只负责回答"我在哪一块"，
-   所以它是一句话而不是两个按钮。高度与右栏第三层对齐。 */
-.left-pane__section {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  height: var(--pane-band2-h);
-  padding: 0 var(--fx-ref-space-12);
-  font-size: var(--text-caption);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--color-brand-text);
-  white-space: nowrap;
+.left-shelf__body {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
+
 
 /* ── 第三层（右栏）：一排并列按钮 ─────────────────────────────────────────
  * 三个叙事工具族不互斥——可以同时往画布上放——所以排成并列按钮，谁开着谁亮。
@@ -1228,13 +1263,6 @@ body[data-pane="center"] .app-header { display: none; }
   border-color: var(--primary);
 }
 
-.left-pane__main {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-}
 
 /* 第四层：注释——一行到底，选中条目时越深越靠右，溢出省略。
    与第三层之间不画横线：它是那一层的下半句，不是另起一栏。 */
@@ -1294,12 +1322,6 @@ body[data-pane="center"] .app-header { display: none; }
   opacity: 1;
 }
 
-.left-pane__body {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
 
 .project-panel {
   display: flex;
@@ -4344,7 +4366,7 @@ body[data-pane="center"] .app-header { display: none; }
   margin-left: auto;
 }
 
-/* 最优路径（席位 2.3.8）：卡上一颗星 + 左边框换成暖色。
+/* 最优路径（席位 2.5.9）：卡上一颗星 + 左边框换成暖色。
    只标节点不足以看出"链路"，所以连线那侧也同步加粗（见 DetroitEdge 的 onOptimalPath）。 */
 .rf-child-optimal {
   font-size: var(--text-caption);

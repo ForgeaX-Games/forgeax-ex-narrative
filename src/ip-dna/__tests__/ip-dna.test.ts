@@ -25,7 +25,7 @@ import {
   normalizeTemplate,
   mapTemplateToContext,
 } from "../phase2-extract.js";
-import { resolveVnActCount, deriveRpgTargetStructure, planPipelineRuns, MIN_PLOT_TREE_NODES, buildSeriesEndingDirective, DEFAULT_MAX_ENDINGS_PER_SERIES_UNIT } from "../phase2c-gen-adapt.js";
+import { deriveNodeBudgetOverride, planPipelineRuns, MIN_PLOT_TREE_NODES, buildSeriesEndingDirective, DEFAULT_MAX_ENDINGS_PER_SERIES_UNIT } from "../phase2c-gen-adapt.js";
 import { KeywordOperatorRetriever, inferPerspective, precheckConflict, fillSlot } from "../phase3-rag.js";
 import { KagGraph } from "../phase3b-kag.js";
 import { analyzeRewriteImpact, projectAllPerspectives } from "../phase4-rewrite.js";
@@ -286,26 +286,22 @@ describe("phase2 聚合与映射", () => {
 });
 
 describe("phase2c 管线适配", () => {
-  it("vn 开放幕数随节点数变化", () => {
-    expect(resolveVnActCount(25)).toBeGreaterThanOrEqual(2);
-    expect(resolveVnActCount(54)).toBeGreaterThan(resolveVnActCount(25));
-    expect(resolveVnActCount(1000)).toBeLessThanOrEqual(6);
+  it("节点预算 ≥25 节点", () => {
+    const b = deriveNodeBudgetOverride(10); // 低于25会被抬到25
+    expect(b.l0_nodes * b.l1_per_parent * b.l2_per_parent).toBeGreaterThanOrEqual(
+      MIN_PLOT_TREE_NODES,
+    );
   });
-  it("rpg 目标结构 ≥25 节点", () => {
-    const ts = deriveRpgTargetStructure(10, 3); // 低于25会被抬到25
-    expect(ts.plot_length).toBeGreaterThanOrEqual(MIN_PLOT_TREE_NODES);
-  });
-  it("planPipelineRuns 系列映射 vn-P0 / rpg-L0", () => {
+  it("planPipelineRuns 给每个游戏单元一份节点预算", () => {
     const plan = { mode: "series" as const, userSpecified: false, units: [
       { index: 1, unitRange: { start: "a", end: "b" }, boundary: "hard" as const, targetNodeCount: 30 },
       { index: 2, unitRange: { start: "c", end: "d" }, boundary: "hard" as const, targetNodeCount: 30 },
     ]};
-    const vn = planPipelineRuns(plan, { family: "vn" });
-    expect(vn[0].pipelineTemplate).toBe("tpl-vn-v2");
-    expect(vn[0].topLevelMapping).toBe("vn-P0");
-    const rpg = planPipelineRuns(plan, { family: "rpg" });
-    expect(rpg[0].topLevelMapping).toBe("rpg-L0");
-    expect(rpg[0].targetStructure).toBeDefined();
+    const runs = planPipelineRuns(plan);
+    expect(runs).toHaveLength(2);
+    for (const r of runs) expect(r.nodeBudgetOverride).toBeDefined();
+    // 曾按 rpg / vn 分出 topLevelMapping 与 tpl-vn-v2 两种映射；两者都没有运行时读取者，
+    // 已随 family 一并删除（见 GameUnitPipelinePlan 注释）。
   });
 
   it("buildSeriesEndingDirective：系列结局收束约束（§4.6b）", () => {

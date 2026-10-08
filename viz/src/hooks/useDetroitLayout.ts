@@ -1374,7 +1374,7 @@ function toStoryNodes(
     }
     const scenes = d.scenes as SceneNode[] | undefined;
     if (Array.isArray(scenes) && scenes.length > 0) {
-      // story_units 是"场景按剧情节点展开"那一版的产物；场景列表助手（2.3.6）现在直接
+      // story_units 是"场景按剧情节点展开"那一版的产物；场景列表助手（2.5.7）现在直接
       // 给一棵 uid/parent_uid 的场景树，没有 story_units。认树优先，别把真产物当没有。
       if (scenes.some((s) => (s.story_units?.length ?? 0) > 0)) {
         return sceneFallbackFromMerged(scenes, plots ?? []);

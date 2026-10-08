@@ -106,8 +106,7 @@
         "type": "string",
         "enum": [
           "deai",
-          "plot_refine",
-          "plot_polish"
+          "plot_refine"
         ]
       },
       "description": "Off-by-default polish seats to attach after plot generation. Each one rewrites the generated script in place as a new version of the same field. All off by default: three extra LLM passes over the plot layer."

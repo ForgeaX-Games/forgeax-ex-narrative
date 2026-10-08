@@ -19,8 +19,10 @@ import type {
   GameUnitPlan,
   GameMode,
   AdaptationDirective,
+  ContentFidelity,
   AdaptationDimensions,
 } from "../types/narrative-ip-dna.js";
+import { DEFAULT_CONTENT_FIDELITY } from "../types/narrative-ip-dna.js";
 
 /** 默认每个游戏单元的最小叙事单元数（≈25 节点/25000字/20分钟，§4.4b）。 */
 export const DEFAULT_UNITS_PER_GAME_UNIT = 25;
@@ -245,8 +247,10 @@ export interface BuildDirectiveOptions {
   userSpecified?: boolean;
   /** 用户精确选填的游戏单元规划（§4.4 第②步对话产物）；提供则直接采用，覆盖默认切分。 */
   gameUnitPlan?: GameUnitPlan;
-  /** 作者自定义改编补充说明（§5.1 自由文本）；合并进 directive.adaptation_notes，空则忠实转化。 */
+  /** 作者自定义改编补充说明（§5.1 自由文本）；合并进 directive.adaptation_notes。 */
   adaptationNotes?: string;
+  /** 原作在这次改编里算什么；未填按 `DEFAULT_CONTENT_FIDELITY`（balanced）。 */
+  contentFidelity?: ContentFidelity;
 }
 
 /**
@@ -303,5 +307,8 @@ export function buildAdaptationDirective(
     game_unit_plan: plan,
     dimensions,
     ...(adaptation_notes ? { adaptation_notes } : {}),
+    // 缺省档也写进去：读的人要能分辨"用户选了 balanced"与"这份指令还没有档位概念"，
+    // 后者在字段刚引入时到处都是，而两者对下游是同一个行为。写实比留空可诊断。
+    content_fidelity: opts.contentFidelity ?? DEFAULT_CONTENT_FIDELITY,
   };
 }

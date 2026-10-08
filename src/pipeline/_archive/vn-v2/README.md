@@ -26,7 +26,7 @@
 
 | 业务功能 | 吸收去处 | 说明 |
 | --- | --- | --- |
-| 防吃书与状态漂移（`vn_state_ledger` / `WorldStateLedger`） | `steps/content-check.ts` 的 `CONTENT_CHECK_CRITERIA` 新增「世界状态自洽」项 | 不复刻账本数据结构，只吸收检查意图 |
+| 防吃书与状态漂移（`vn_state_ledger` / `WorldStateLedger`） | `steps/content-check.ts` 的 `CONTENT_CHECK_CRITERIA` 新增「世界状态自洽」项；v4 起账本本体亦通用化，见 `pipeline/graph/state-ledger.ts` 与独立步 `state_ledger` | C1 时只吸收检查意图。v4 复核后连账本一起搬：折叠只认节点的 id 与入边，本文件保留的是影游专属的基线来源与补全提示词，`computeWorldSnapshot` 不再在此 |
 | 三维 staging + 确定性场号（`vn_branched_beats` 的 `exportScenesAndRenumber`） | `pipeline/scene-numbering.ts` 的 `deriveDeterministicSceneNumbers`，接入 `steps/script-generation.ts` | 换了数据形状：原算法吃分支 DAG，新函数吃线性有序章节列表；"三维任一维变化即换场"这条规则原样保留。分支专属部分（pivot/branch_origin_beat 的编号重写）不迁，只留在本目录供查证 |
 | 对白类型区分（`vn_screenplay` 的 `VnDialogueLine.kind`） | `types/index.ts` 的 `PlotNode.jrpg_elements.dialogue_segments[].kind` + `plot-generation.ts` 的 `normalizeDialogueSegmentKind` | 取值集合未照搬，只吸收"对白与旁白按原始顺序交错"这一结构性收益，缺省 `"dialogue"` 兼容存量产物 |
 | 上传剧本入口（`vn-v2-e2.ts` 的运行时步序替换） | `steps/user-preference-summary.ts` 的 `PREFERENCE_SUMMARY_COMPOSER`（`uploadedScriptContext` 帮助函数） | 不复刻"动态改图"这个运行方式，改为通用席位 composer 感知 `ctx.uploaded_script` 并把它当权威来源；对所有品类生效，不再按 template 分支 |

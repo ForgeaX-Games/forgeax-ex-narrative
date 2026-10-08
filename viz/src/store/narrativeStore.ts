@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { StructureVote } from "../lib/structureVote";
 import type {
   TierId,
   ModeId,
@@ -37,7 +38,14 @@ export type ViewMode = "text" | "graph";
  * 叙事上传的三个入口：直接输入 / 标签选择 / 文件上传。
  * 它们只长在节点视图的输入节点里——没有独立的上传面板。
  */
-export type InputTab = "text" | "tags" | "file";
+/**
+ * 需求从哪来 —— 两条入口，与服务端的 `IntakeSource` 同一套词。
+ *
+ * 曾是 `text | tags | file` 三档：前两档其实是同一条入口的两半（需求文本与标签六维
+ * 并存，不是二选一），分成两档就把互斥写进了状态机 —— 在 tags 档时有个 effect 会把
+ * 标签串覆盖进 `userInput`，用户手写的需求当场没了。
+ */
+export type InputTab = "authored" | "adapted";
 
 /**
  * 创作空间顶栏三段——它现在是纯粹的工具栏：
@@ -89,6 +97,14 @@ export interface RoutingDraft {
   complexityTouched: boolean;
   storyType: string | null;
   storyTheme: string | null;
+  /**
+   * 用户对叙事结构的覆盖；null = 跟随三轴投票的推导结论。
+   *
+   * 结构缺省不由用户选：他一开始没有依据。但推导结论摆出来之后他就有依据了 ——
+   * 看见"推出纯树状（品类→线性·树状；类型→树状…）"再决定要不要改成线性，
+   * 和从一个空白下拉框里猜一个，是两件事。
+   */
+  narrativeStructure: string | null;
 }
 
 /**
@@ -190,6 +206,8 @@ export type RunMode = "start" | "resume" | "fork" | null;
  *  - "routing" 改了路由（ROUTING）——路由在「开始生成」时提交，改动点「开始生成」铸新条目、复用预处理/IP DNA。
  *  - null      无待决分叉。
  */
+export type { StructureVote } from "../lib/structureVote";
+
 export type ForkKind = "input" | "routing" | null;
 
 /**
@@ -376,11 +394,17 @@ interface NarrativeState {
   /**
    * 磁盘条目已变更的通知计数。
    *
-   * 落盘动作（建条目 / 保存配置 / 取消 job）可能发生在任一 pane，而项目清单只由 owner 持有；
+   * 落盘动作（建条目 / 保存配置 / 取消 job）可能发生在任一 pane，而任务清单只由 owner 持有；
    * 改动方 bump 一下，owner 侧看到计数变化就重拉 /history，不必知道谁改的。
    */
   historyRevision: number;
   focusedStepId: string | null;
+  /**
+   * 聚焦到的剧情节点，存**裸** node_id（产物里那个），不存图上 `<容器>__<node_id>`
+   * 的合成 id。图与文两侧都按它认节点：文本视图拿它找 `data-node-id` 的 DOM 并高亮，
+   * 跨步 chip 拿它反查还有哪些步骤含这个节点，图视图拿它把镜头落到那一个子节点上。
+   * 一旦存成带容器前缀的合成 id，跨步就对不上——同一个节点在每个步骤里前缀都不同。
+   */
   focusedChildNodeId: string | null;
   expandedStepId: string | null;
   collapsedGraphIds: string[];
@@ -405,6 +429,11 @@ interface NarrativeState {
   previewOrder: string[] | null;
   /** 当前预演是否为"自动"模式（planning + auto tier）；右栏据此显示"由 LLM 判定"提示。 */
   previewIsAuto: boolean;
+  /**
+   * 后端对当前三轴推出的叙事结构及其依据（随 /plan 预演一起回来）。
+   * 三轴都没选时为 null —— 那时还没有可解释的投票发生过。
+   */
+  structureVote: StructureVote | null;
 
   streamingChunks: Record<string, string>;
   streamPlayedSteps: string[];
@@ -449,7 +478,7 @@ interface NarrativeState {
   requestCommand: (kind: NarrativeCommandKind) => void;
   /** owner 执行完后清槽（带 nonce 防止清掉后来的新命令）。 */
   clearCommand: (nonce: number) => void;
-  /** 通知 owner：磁盘条目变了，重拉项目清单。 */
+  /** 通知 owner：磁盘条目变了，重拉任务清单。 */
   bumpHistory: () => void;
   setAvailableModes: (modes: TierModeInfo[]) => void;
 
@@ -555,6 +584,8 @@ interface NarrativeState {
   setViewMode: (mode: ViewMode) => void;
   /** STEP2 路由变化时，左栏把算好的预演链路推进 store（BroadcastChannel 同步给右栏 PIPELINE STATUS）。 */
   setPreviewOrder: (order: string[] | null, isAuto?: boolean) => void;
+  /** 预演回来后写入结构推导结论与依据；无结论时传 null。 */
+  setStructureVote: (vote: StructureVote | null) => void;
   setFocus: (stepId: string | null, childNodeId?: string | null) => void;
   appendStreamChunk: (stepId: string, chunk: string) => void;
   markStreamPlayed: (stepId: string) => void;
@@ -637,6 +668,7 @@ const INITIAL_ROUTING: RoutingDraft = {
   complexityTouched: false,
   storyType: null,
   storyTheme: null,
+  narrativeStructure: null,
 };
 
 const INITIAL_INPUT: InputDraft = {
@@ -966,7 +998,7 @@ export const useNarrativeStore = create<NarrativeState>((set, get) => ({
 
   // ---- UI state ----
   viewMode: "graph",
-  inputTab: "text",
+  inputTab: "authored",
   focusedFile: null,
   openNavTab: null,
   leftSection: "tasks",
@@ -989,6 +1021,7 @@ export const useNarrativeStore = create<NarrativeState>((set, get) => ({
   nodeDragsEntryKey: null,
   previewOrder: null,
   previewIsAuto: false,
+  structureVote: null,
 
   streamingChunks: {},
   streamPlayedSteps: [],
@@ -1658,7 +1691,7 @@ export const useNarrativeStore = create<NarrativeState>((set, get) => ({
 
   resetFormDraft: () =>
     set({
-      inputTab: "text",
+      inputTab: "authored",
       focusedFile: null,
       routing: { ...INITIAL_ROUTING },
       input: { ...INITIAL_INPUT },
@@ -1677,6 +1710,11 @@ export const useNarrativeStore = create<NarrativeState>((set, get) => ({
       JSON.stringify(s.previewOrder) === JSON.stringify(order)
         ? s
         : { previewOrder: order, previewIsAuto: isAuto },
+    ),
+
+  setStructureVote: (vote) =>
+    set((s) =>
+      JSON.stringify(s.structureVote) === JSON.stringify(vote) ? s : { structureVote: vote },
     ),
 
   setFocus: (stepId, childNodeId) => {

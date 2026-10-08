@@ -20,6 +20,6 @@ export { vnBeats } from "./vn-beats.js";
 export { vnScriptNormalize } from "./vn-script-normalize.js";
 export { vnSegmentConfirm } from "./vn-segment-confirm.js";
 export { vnBranchedBeats } from "./vn-branched-beats.js";
-export { vnStateLedger, computeWorldSnapshot, renderWorldSnapshot } from "./vn-state-ledger.js";
+export { vnStateLedger, vnBeatsToLedgerNodes } from "./vn-state-ledger.js";
 export { vnScreenplay } from "./vn-screenplay.js";
 export { vnStoryboard } from "./vn-storyboard.js";

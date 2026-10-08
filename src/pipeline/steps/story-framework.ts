@@ -3,6 +3,7 @@ import { deviationFromLegacy } from "../../types/index.js";
 import type { LLMClient } from "../runtime/llm-client.js";
 import { extractJSON } from "../runtime/llm-client.js";
 import { getNodeFilter } from "../graph/node-merge.js";
+import { sourceStructureIsBinding } from "../../ip-dna/fidelity.js";
 import { userInstructionsBlock, buildIpSourceReference } from "./design-context-helper.js";
 import { buildCharacterDigest, buildItemDigest } from "./context-helpers.js";
 import {
@@ -13,6 +14,7 @@ import {
   type PromptComposer,
 } from "../runtime/prompt-composer.js";
 import { inputPriorityChain, modeDispatchSource, conceptFieldMapping, preOutputChecklist } from "../prompt/structural-clarity.js";
+import { getStructureTopology } from "../../knowledge/narrative-axes/story-structures.js";
 import {
   repairIntraGroupConnections,
   filterCrossBranchConnections,
@@ -25,7 +27,9 @@ import {
   getEntropy,
   getLayerEntropy,
   getNodeBudget,
+  resolveL0Budget,
   buildBranchPromptSection,
+  structureTopology,
   buildDeviationPrompt,
   buildNodeCountPromptSection,
   type LayerBranchStats,
@@ -319,10 +323,21 @@ interface StructureRequirements {
 }
 
 /**
- * 检测用户输入中对结构的明确需求：多结局、多线并行、多开局等。
- * 返回统一的 StructureRequirements，combined 为合并后的 prompt 约束段。
+ * 检测这一跑对结构的明确需求：多结局、多线并行、多开局等。
+ *
+ * 两个来源，优先级分明：
+ *  1. **用户说的**——文本里点名"双结局""HE/BE"，那是他当下要的，谁也不能改；
+ *  2. **结构轴给的**——线性结构收敛到一个结局、纯树状开多个，是结构自己的定义。
+ *
+ * 只读第一个来源是不够的，真实跑里能看见代价：一部八段线性的原作改编出来带两个
+ * 结局，因为线性结构的 `endings: "single"` 从来没人读过——结构参数进了分支率，
+ * 唯独结局数量这一项停在表里。用户没点名时，结构说了算。
  */
-function detectStructureRequirements(userInput: string, outline: string): StructureRequirements {
+function detectStructureRequirements(
+  userInput: string,
+  outline: string,
+  structure?: string | null,
+): StructureRequirements {
   const combined = `${userInput}\n${outline}`;
 
   // ── 多结局检测 ──
@@ -344,6 +359,24 @@ function detectStructureRequirements(userInput: string, outline: string): Struct
     endings = { required: true, count: 2, types: endingTypes, hint: "用户要求多结局" };
   } else {
     endings = { required: false, count: 0, types: [], hint: "" };
+  }
+
+  /**
+   * 用户没点名时，结构轴的结局倾向说了算。
+   *
+   * `single` 走的是另一条路：它不是"至少 N 个"，而是"最多一个"——同一个
+   * `endings.count` 表达不了两个方向，所以单结局单独出一段收敛约束，
+   * 不去挤多结局那条分支。
+   */
+  const endingTendency = structure ? getStructureTopology(structure).endings : null;
+  const singleEndingRequired = !endings.required && endingTendency === "single";
+  if (!endings.required && endingTendency === "many") {
+    endings = {
+      required: true,
+      count: 3,
+      types: [],
+      hint: "本作的叙事结构是多结局型（分了不回头，每条路各有终点）",
+    };
   }
 
   // ── 多线并行 / 多开局检测 ──
@@ -380,6 +413,15 @@ function detectStructureRequirements(userInput: string, outline: string): Struct
     sections.push(lines.join("\n"));
   }
 
+  if (singleEndingRequired) {
+    sections.push([
+      `### 单结局约束`,
+      `本作的叙事结构要求**收敛到一个结局**：所有路线最终汇到同一个终点。`,
+      `- 中途可以分叉，但分出去的线必须在结局之前合流回主干（branch_groups 的 merge_at 给出合流点，不能为 null）`,
+      `- 整张框架里 next_nodes 为空的节点**有且只有一个**`,
+    ].join("\n"));
+  }
+
   if (multiThread.required) {
     sections.push([
       `### 多线/并行叙事约束`,
@@ -406,11 +448,12 @@ function buildStep1Prompt(ctx: NarrativeContext): string {
   const layerEntropy = getLayerEntropy(entropy, 0, l0Ctrl);
   const deviation = deviationFromLegacy(gcp);
 
-  const branchSection = buildBranchPromptSection(0, complexity, layerEntropy);
+  const branchSection = buildBranchPromptSection(0, complexity, layerEntropy, structureTopology(ctx));
   const deviationSection = buildDeviationPrompt(deviation);
   const nodeCountSection = buildNodeCountPromptSection(0, layerEntropy, l0Ctrl?.min_nodes, l0Ctrl?.max_nodes, complexity);
 
   const budget = getNodeBudget(complexity);
+  const override = gcp?.node_budget_override;
   const l1Desc = budget.l1_per_min === 1 && budget.l1_per_max === 1
     ? "不扩展（继承L0）"
     : `${budget.l1_per_min}~${budget.l1_per_max} 个子节点`;
@@ -418,17 +461,27 @@ function buildStep1Prompt(ctx: NarrativeContext): string {
     ? "不扩展（继承L1）"
     : `${budget.l2_per_min}~${budget.l2_per_max} 个子节点`;
 
+  // 用户明说了章节数就把它写进提示词。否则 LLM 按体量铺开，生成完再被截断 ——
+  // 截掉的是它精心安排的后几章，用户看到的是一个半截故事。
+  const l0Line = override
+    ? `- L0 主干章节: **${override.l0_nodes} 个**（用户明确指定，必须照此组织）\n` +
+      `  分支/结局/并行线节点在这 ${override.l0_nodes} 章之外，按下面的结构要求另行安排`
+    : `- L0 框架总节点（含分支/结局/并行线）: ${budget.l0_min}~${budget.l0_max} 个`;
+
   const budgetHint = `## 总节点预算（全管线最终叶节点: ${budget.total_label}）
-- L0 框架总节点（含分支/结局/并行线）: ${budget.l0_min}~${budget.l0_max} 个
-- L1 每个L0扩展: ${l1Desc}
-- L2 每个L1扩展: ${l2Desc}
+${l0Line}
+- L1 每个L0扩展: ${override ? `${override.l1_per_parent} 个子节点（用户指定）` : l1Desc}
+- L2 每个L1扩展: ${override ? `${override.l2_per_parent} 个子节点（用户指定）` : l2Desc}
 
 ⚠️ 节点预算平衡原则：
-- L0 的分支/结局/并行线等结构节点包含在 ${budget.l0_max} 上限内
 - 若 L0 使用了较多结构节点，下游 L1/L2 会自动在较低端扩展以平衡总量
 - 总量目标 ${budget.total_label} 是最终约束，L0 结构由你根据用户需求自由组织`;
 
-  const structReq = detectStructureRequirements(ctx.user_input ?? "", outlineToText(ctx.initial_story_outline));
+  const structReq = detectStructureRequirements(
+    ctx.user_input ?? "",
+    outlineToText(ctx.initial_story_outline),
+    ctx.narrative_axes?.structure,
+  );
 
   return `## 用户需求
 ${ctx.user_input}
@@ -446,14 +499,6 @@ ${nodeCountSection}
 ${branchSection}
 
 ${deviationSection}
-
-## 框架结构类型参考
-根据叙事熵和故事特性，可选择以下结构类型（仅作参考，非必须）：
-- linear — 线性单线叙事，适合低熵/简单故事
-- dual_climax — 双高潮结构，中段双线交汇
-- multi_thread — 多线程并行，适合高熵/复杂叙事
-- nested — 嵌套结构，故事套故事
-- spiral — 螺旋递进，不断回溯深化
 
 node_id 必须严格遵守 Detroit 编码规则（分支用字母后缀）。`;
 }
@@ -626,7 +671,11 @@ type StoryFrameworkSkeleton = {
 
 /** 输出校验（抛错触发 LLM 重试）。规划阶段：结局数量约束是运行时算出的，故需要 ctx。 */
 export function validateStoryFrameworkPlan(raw: string, ctx: NarrativeContext): void {
-  const structReq = detectStructureRequirements(ctx.user_input ?? "", outlineToText(ctx.initial_story_outline));
+  const structReq = detectStructureRequirements(
+    ctx.user_input ?? "",
+    outlineToText(ctx.initial_story_outline),
+    ctx.narrative_axes?.structure,
+  );
   const p = extractJSON<Record<string, unknown>>(raw);
   if (!Array.isArray(p.nodes) || p.nodes.length === 0)
     throw new Error("nodes必须是非空数组");
@@ -654,33 +703,51 @@ export function validateStoryFrameworkFill(raw: string): void {
 }
 
 /**
- * 路由：判定本次是整体生成（full）、节点级局部重跑（regen），还是目标为空的空跑
- * （skip，对应 legacy 里 `targetNodes.length === 0` 时的提前 return）。
+ * 路由：判定本次是整体生成（full）、骨架已定只填内容（regen 局部重跑 / seeded IP 改编），
+ * 还是目标为空的空跑（skip，对应 legacy 里 `targetNodes.length === 0` 时的提前 return）。
  * 恒不带条件跑在最前面，后续阶段按 `ctx._sf_mode` 用 SequenceStage.condition 挂钩。
  */
 export function storyFrameworkRoute(ctx: NarrativeContext): void {
   const c = ctx as Record<string, unknown>;
   const nodeFilter = getNodeFilter(ctx);
+  const existingNodes = ctx.story_framework?.framework?.nodes;
 
-  if (nodeFilter && ctx.story_framework?.framework?.nodes) {
-    const existingNodes = ctx.story_framework.framework.nodes;
+  if (nodeFilter && existingNodes) {
     const targetNodes = existingNodes.filter((n) => nodeFilter.has(n.node_id));
     if (targetNodes.length === 0) {
       c._sf_mode = "skip";
       return;
     }
     c._sf_mode = "regen";
-    c._sf_regen_target_nodes = targetNodes;
+    c._sf_fixed_nodes = targetNodes;
+    return;
+  }
+
+  // 忠实档的 IP 改编：L0 骨架已经由原作的 plot_tree 确定性转换得到（phase2-extract 的
+  // plotTreeToStoryFramework）。这里再规划一遍，等于把原作的章节拓扑换成模型自己
+  // 编的一套，改编就不成改编了 —— 用户拿原作来，得到的却是一个同名新故事。
+  //
+  // 判据只问 sourceStructureIsBinding：非忠实档（含缺省的 balanced）本就允许重排结构，
+  // 此时照搬原作拓扑是把用户没要的约束强加上去。L1/L2 的注入路由问同一个判据。
+  //
+  // 内容填充照跑：种子只带得动 title 与拓扑，main_content 仍要生成。
+  if (sourceStructureIsBinding(ctx) && existingNodes && existingNodes.length > 0) {
+    c._sf_mode = "seeded";
+    c._sf_fixed_nodes = existingNodes;
     return;
   }
 
   c._sf_mode = "full";
 }
 
-/** regen 模式的骨架准备：直接从既有节点截取，不经 LLM 规划、不经修复链。 */
-export function storyFrameworkPrepareRegen(ctx: NarrativeContext): void {
+/**
+ * 骨架已定时的准备：直接从既有节点截取，不经 LLM 规划、不经修复链。
+ * regen（局部重跑既有框架）与 seeded（IP 种子骨架）共用 —— 两者都是"拓扑不许动，
+ * 只补内容"，区别仅在目标是子集还是全体，那个差异已经由 route 决定完了。
+ */
+export function storyFrameworkPrepareFixed(ctx: NarrativeContext): void {
   const c = ctx as Record<string, unknown>;
-  const targetNodes = c._sf_regen_target_nodes as FrameworkNode[];
+  const targetNodes = c._sf_fixed_nodes as FrameworkNode[];
 
   const skeleton: StoryFrameworkSkeleton = {
     nodes: targetNodes.map((n) => ({
@@ -710,23 +777,24 @@ export function storyFrameworkPrepareFull(ctx: NarrativeContext): void {
   const c = ctx as Record<string, unknown>;
   const skeleton = c._sf_plan_raw as StoryFrameworkSkeleton;
 
-  // L0 总量截断：l0_max 是总节点上限（含分支），超标时结构感知裁剪
-  const l0Budget = getNodeBudget(ctx.global_control_params?.complexity ?? 2);
-  if (skeleton.nodes.length > l0Budget.l0_max) {
+  // L0 总量截断：超标时结构感知裁剪 —— 先让出分支与结局，再截主干。
+  const branchNodeIds = new Set<string>();
+  for (const bg of (skeleton.branch_groups ?? []) as Array<{ branches: string[] }>) {
+    for (const b of bg.branches) branchNodeIds.add(b);
+  }
+  for (const n of skeleton.nodes) {
+    if (n.is_branch) branchNodeIds.add(String(n.node_id));
+  }
+
+  const l0Budget = resolveL0Budget(ctx, branchNodeIds.size);
+  if (skeleton.nodes.length > l0Budget.totalMax) {
     console.warn(
-      `[StoryFramework] L0 total ${skeleton.nodes.length} exceeds budget max ${l0Budget.l0_max}, truncating`,
+      `[StoryFramework] L0 total ${skeleton.nodes.length} exceeds max ${l0Budget.totalMax}` +
+        `${l0Budget.fromOverride ? " (user-specified chapter count)" : ""}, truncating`,
     );
 
-    const branchNodeIds = new Set<string>();
-    for (const bg of (skeleton.branch_groups ?? []) as Array<{ branches: string[] }>) {
-      for (const b of bg.branches) branchNodeIds.add(b);
-    }
-    for (const n of skeleton.nodes) {
-      if (n.is_branch) branchNodeIds.add(String(n.node_id));
-    }
-
     const trunkNodes = skeleton.nodes.filter((n) => !branchNodeIds.has(String(n.node_id)));
-    const maxTrunk = Math.max(2, l0Budget.l0_max - branchNodeIds.size);
+    const maxTrunk = Math.max(2, l0Budget.trunkMax);
 
     if (trunkNodes.length > maxTrunk) {
       const keepTrunkIds = new Set(trunkNodes.slice(0, maxTrunk).map((n) => String(n.node_id)));
@@ -735,8 +803,8 @@ export function storyFrameworkPrepareFull(ctx: NarrativeContext): void {
       );
     }
 
-    if (skeleton.nodes.length > l0Budget.l0_max) {
-      skeleton.nodes = skeleton.nodes.slice(0, l0Budget.l0_max);
+    if (skeleton.nodes.length > l0Budget.totalMax) {
+      skeleton.nodes = skeleton.nodes.slice(0, l0Budget.totalMax);
     }
   }
 
@@ -804,7 +872,7 @@ export function storyFrameworkPrepareFull(ctx: NarrativeContext): void {
  */
 export function normalizeStoryFramework(parsed: unknown, ctx: NarrativeContext): StoryFramework {
   const c = ctx as Record<string, unknown>;
-  const mode = c._sf_mode as "regen" | "full" | "skip" | undefined;
+  const mode = c._sf_mode as "regen" | "seeded" | "full" | "skip" | undefined;
 
   if (mode === "skip") {
     return ctx.story_framework as StoryFramework;
@@ -812,9 +880,10 @@ export function normalizeStoryFramework(parsed: unknown, ctx: NarrativeContext):
 
   const content = parsed as { node_contents: Array<Record<string, unknown>> };
 
-  if (mode === "regen") {
-    const targetNodes = c._sf_regen_target_nodes as FrameworkNode[];
-    const regenNodes: FrameworkNode[] = targetNodes.map((orig, i) => {
+  // 骨架已定的两种模式：节点原样保留，只把填充结果盖在内容字段上。
+  if (mode === "regen" || mode === "seeded") {
+    const fixedNodes = c._sf_fixed_nodes as FrameworkNode[];
+    const filledNodes: FrameworkNode[] = fixedNodes.map((orig, i) => {
       const fill = content.node_contents.find((cn) => String(cn.node_id) === orig.node_id)
         ?? content.node_contents[i] ?? {};
       return {
@@ -825,11 +894,25 @@ export function normalizeStoryFramework(parsed: unknown, ctx: NarrativeContext):
       };
     });
 
+    // regen 是在一个已经跑过 full 的框架上局部重填，沿用它既有的结构结论。
+    // seeded 的种子只带 `{framework:{nodes}}`（plotTreeToStoryFramework 不产出
+    // dynamic_structure），沿用就会把带分叉的原作记成 linear，下游按线性铺开。
+    // 所以 seeded 从节点自己的 is_branch 重新判定。
+    const seededHasBranch = filledNodes.some((n) => n.is_branch);
     return {
-      framework: { nodes: regenNodes },
+      framework: { nodes: filledNodes },
       dynamic_structure: {
-        structure_type: ctx.story_framework?.dynamic_structure?.structure_type ?? "linear",
-        framework_nodes: regenNodes,
+        structure_type:
+          mode === "seeded"
+            ? seededHasBranch
+              ? "branching"
+              : "linear"
+            : (ctx.story_framework?.dynamic_structure?.structure_type ?? "linear"),
+        framework_nodes: filledNodes,
+        // seeded 的 branch_groups 暂无来源：原作的合流关系在 plot_tree 的 merge 边上，
+        // 要等 PlotTree → 结构席的映射把它带过来。留空表示「未知」而不是「没有分叉」，
+        // 也因此不写 `_l0_branch_stats` —— 一个 mergedCount 恒为 0 的统计会让下游
+        // 以为这棵树分了从不收，比读不到更坏。
         branch_groups: ctx.story_framework?.dynamic_structure?.branch_groups ?? [],
       },
     };
@@ -904,8 +987,8 @@ export async function storyFramework(
 
   if (c._sf_mode === "skip") return;
 
-  if (c._sf_mode === "regen") {
-    storyFrameworkPrepareRegen(ctx);
+  if (c._sf_mode === "regen" || c._sf_mode === "seeded") {
+    storyFrameworkPrepareFixed(ctx);
   } else {
     const step1Raw = await llm.callWithRetry(
       composeSystemPrompt(STORY_FRAMEWORK_PLAN_COMPOSER, ctx),

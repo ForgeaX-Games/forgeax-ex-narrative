@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Handle, Position, useReactFlow, type NodeProps } from "reactflow";
 import { useNarrativeStore } from "../../store/narrativeStore";
+import type { StructureVote } from "../../lib/structureVote";
 import { useT, getLocale } from "../../i18n";
 import {
   TIER_ITEMS,
@@ -26,6 +27,85 @@ import { ASSISTANT_SEATS } from "../../composer/seats.generated";
 
 /** 可挂载席：从席位投影现取，手抄一份 id 会在席位改名后静默失效。 */
 const ATTACHABLE_SEATS = ASSISTANT_SEATS.filter((s) => s.pipelineRole === "attachable");
+
+/** 投票依据里轴名到界面文案 key 的对应。 */
+const VOTE_AXIS_LABEL_KEYS: Record<string, string> = {
+  genre: "composer.cfg.structure.axis.genre",
+  type: "composer.cfg.storyType",
+  theme: "composer.cfg.storyTheme",
+};
+
+/**
+ * 第四轴：推出了什么结构、凭什么，以及要不要改。
+ *
+ * 结构默认不由用户挑 —— 一开始他没有依据。但把推导结论和各轴的推荐摆出来之后他
+ * 就有依据了，此时给一个覆盖入口才是成立的：结构决定整棵剧情树的分叉密度、是否
+ * 收束、有几个结局，换一条轴就换出另一棵树，用户有权在看懂之后说"我要线性"。
+ *
+ * 覆盖写进 routing 草稿（不是写死结论），选回「跟随推导」就重新交给投票。
+ */
+function StructureField({
+  vote,
+  override,
+  onOverride,
+  axes,
+  t,
+}: {
+  vote: StructureVote | null;
+  override: string | null;
+  onOverride: (code: string | null) => void;
+  axes: NarrativeAxesCatalog;
+  t: (k: string, p?: Record<string, string | number>) => string;
+}) {
+  const nameOf = (code: string): string => {
+    const hit = axes.structures.find((o) => o.code === code);
+    return hit ? axisOptionLabel(hit) : code;
+  };
+
+  const basis = Object.entries(vote?.byAxis ?? {})
+    .filter(([, codes]) => codes.length > 0)
+    .map(([axis, codes]) => {
+      const key = VOTE_AXIS_LABEL_KEYS[axis];
+      return `${key ? t(key) : axis} → ${codes.map(nameOf).join("、")}`;
+    });
+
+  // 三轴全空又没覆盖时整块不出现：那时还没有任何投票发生过，摆一个"未选"
+  // 只会让人以为哪里漏配了。
+  if (!vote?.structure && !override) return null;
+
+  return (
+    <label className="composer-config__field">
+      <span className="composer-config__label">{t("composer.cfg.structure")}</span>
+      <select
+        className="composer-config__select"
+        value={override ?? ""}
+        onChange={(e) => onOverride(e.target.value || null)}
+      >
+        <option value="">
+          {vote?.structure
+            ? t("composer.cfg.structure.follow", { name: nameOf(vote.structure) })
+            : t("composer.cfg.tierAuto")}
+        </option>
+        {axes.structures.map((o) => (
+          <option key={o.code} value={o.code}>{axisOptionLabel(o)}</option>
+        ))}
+      </select>
+      <span className="composer-config__hint">
+        {override
+          ? t("composer.cfg.structure.explicit")
+          : t("composer.cfg.structure.voted")}
+      </span>
+      {/* 依据只在跟随推导时给：自己点定了结构，再列各轴推荐就成了噪音。 */}
+      {!override && basis.length > 0 && (
+        <ul className="composer-config__basis">
+          {basis.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      )}
+    </label>
+  );
+}
 
 const LONG_PRESS_MS = 250;
 const MOVE_THRESHOLD = 4;
@@ -111,7 +191,20 @@ function ComposerFlowNodeRaw({ id, data, selected }: NodeProps<ComposerFlowData>
     setComposerNodeConfig(node.id, { uploadedFileNames: names, confirmed: false });
   };
   const routeGroup = (cfg.routeGroup as string) ?? "planning";
-  const inputTab = (cfg.inputTab as string) ?? "text";
+  /**
+   * 需求从哪来 —— 两条入口，不是三档说法。
+   *
+   * 从前是 `text | tags | file` 三档互斥，于是需求文本与标签六维二选一。v4 的口径是三者
+   * 并存（需求描述 + 标签设置 + 体量选择，"与"不是"或"），所以文本与标签同属"自己描述"
+   * 这一条入口，同屏并列；`adapted` 才是另一条入口（上传原作改编）。
+   *
+   * 存量节点 config 里可能还写着旧三档，在这里吃下来：服务端的 `toIntakeSource` 管盘上的
+   * 存量，这里管前端状态里的存量。
+   */
+  const inputTab: "authored" | "adapted" = (() => {
+    const raw = String(cfg.inputTab ?? "").toLowerCase();
+    return raw === "adapted" || raw === "file" || raw === "works" ? "adapted" : "authored";
+  })();
 
   // 入口节点出「需求输入 + 三轴」；独立的叙事全量/单品路由节点出旧的层级·品类·模块面板。
   const isEntry = !!node && isEntryNode(node);
@@ -119,7 +212,10 @@ function ComposerFlowNodeRaw({ id, data, selected }: NodeProps<ComposerFlowData>
   const showRoutingCfg = node?.category === "routing";
   const showAxesCfg = isEntry;
 
-  // 三轴词表（类型/题材）：入口节点专用，进程内共享一次请求。
+  // 第四轴的推导结论：由 /plan 预演算出，provider 写进 store，这里只读。
+  const structureVote = useNarrativeStore((s) => s.structureVote);
+
+  // 三轴词表（类型/题材/结构）：入口节点专用，进程内共享一次请求。
   const [axes, setAxes] = useState<NarrativeAxesCatalog>({ types: [], themes: [], structures: [] });
   useEffect(() => {
     if (!showAxesCfg) return;
@@ -164,7 +260,7 @@ function ComposerFlowNodeRaw({ id, data, selected }: NodeProps<ComposerFlowData>
 
   // 文件上传节点：从下游连接的「叙事路由」节点解析 tier/mode/complexity/是否就绪，喂给 IpStageFlow。
   const fileRouting = useMemo(() => {
-    if (!node || node.category !== "input" || inputTab !== "file") return null;
+    if (!node || node.category !== "input" || inputTab !== "adapted") return null;
     const mine = computeAnchoredPipelines(composerNodes, composerEdges).find(
       (p) => p.inputNode.id === node.id,
     );
@@ -270,16 +366,16 @@ function ComposerFlowNodeRaw({ id, data, selected }: NodeProps<ComposerFlowData>
     .filter(Boolean)
     .join(" ");
 
+  /** 折叠态的一行摘要。两半都可能有值，就都摘出来 —— 只报一半会让另一半看着像没填。 */
   const inputSummary = (): string => {
-    if (inputTab === "tags") {
-      const sel = (cfg.tagSelections as Record<string, string>) ?? {};
-      const picked = Object.values(sel).filter(Boolean);
-      return picked.length ? picked.join(" · ") : t("composer.node.noInput");
-    }
-    if (inputTab === "file") {
+    if (inputTab === "adapted") {
       return uploadNames.length ? uploadNames.join(", ") : t("composer.cfg.fileEmpty");
     }
-    return String(cfg.userInput ?? "").trim() || t("composer.node.noInput");
+    const sel = (cfg.tagSelections as Record<string, string>) ?? {};
+    const picked = Object.values(sel).filter(Boolean);
+    const text = String(cfg.userInput ?? "").trim();
+    const parts = [text, picked.join(" · ")].filter(Boolean);
+    return parts.length ? parts.join(" ｜ ") : t("composer.node.noInput");
   };
 
   /**
@@ -380,19 +476,20 @@ function ComposerFlowNodeRaw({ id, data, selected }: NodeProps<ComposerFlowData>
 
   /** 需求这一半填够了没。入口节点的"确认"只有一枚，得同时管住三种说法中当前那一种。 */
   const inputReady = (() => {
-    if (inputTab === "tags") {
-      const sel = (cfg.tagSelections as Record<string, string>) ?? {};
-      const custom = String(((cfg.tagCustomTexts as Record<string, string>) ?? {}).custom ?? "").trim();
-      return Object.values(sel).filter(Boolean).length > 0 || !!custom;
-    }
-    if (inputTab === "file") return uploadNames.length > 0;
-    return !!String(cfg.userInput ?? "").trim();
+    if (inputTab === "adapted") return uploadNames.length > 0;
+    // 文本与标签并存，所以门槛是"至少给了一样"，不是"当前那一档填了"。都给满也对。
+    const sel = (cfg.tagSelections as Record<string, string>) ?? {};
+    const custom = String(((cfg.tagCustomTexts as Record<string, string>) ?? {}).custom ?? "").trim();
+    return (
+      !!String(cfg.userInput ?? "").trim() ||
+      Object.values(sel).filter(Boolean).length > 0 ||
+      !!custom
+    );
   })();
 
-  const INPUT_WAYS: { id: string; labelKey: string }[] = [
-    { id: "text", labelKey: "composer.item.input.text" },
-    { id: "tags", labelKey: "composer.item.input.tags" },
-    { id: "file", labelKey: "composer.item.input.file" },
+  const INPUT_WAYS: { id: "authored" | "adapted"; labelKey: string }[] = [
+    { id: "authored", labelKey: "composer.item.input.authored" },
+    { id: "adapted", labelKey: "composer.item.input.adapted" },
   ];
 
   return (
@@ -455,8 +552,8 @@ function ComposerFlowNodeRaw({ id, data, selected }: NodeProps<ComposerFlowData>
             </div>
           )}
 
-          {/* ── 输入需求：直接输入 ── */}
-          {showInputCfg && inputTab === "text" && (
+          {/* ── 自己描述：需求文本与标签六维同屏，两者并存（填一样、填两样都行）── */}
+          {showInputCfg && inputTab === "authored" && (
             <>
               <label className="composer-config__field">
                 <span className="composer-config__label">{t("composer.cfg.input")}</span>
@@ -468,21 +565,6 @@ function ComposerFlowNodeRaw({ id, data, selected }: NodeProps<ComposerFlowData>
                   onChange={(e) => setField({ userInput: e.target.value })}
                 />
               </label>
-              {/* 入口节点的确认统一在最后一枚，管需求与路由两半，这里不再各出一个。 */}
-              {!isEntry && (
-                <ConfirmFoot
-                  confirmed={confirmed}
-                  disabled={!inputReady}
-                  onConfirm={() => set({ confirmed: true })}
-                  t={t}
-                />
-              )}
-            </>
-          )}
-
-          {/* ── 输入需求：标签选择 ── */}
-          {showInputCfg && inputTab === "tags" && (
-            <>
               {TAG_DIMENSIONS.filter((d) => !d.allowCustom).map((dim) => (
                 <label className="composer-config__field" key={dim.key}>
                   <span className="composer-config__label">{t(dim.nameKey)}</span>
@@ -533,8 +615,8 @@ function ComposerFlowNodeRaw({ id, data, selected }: NodeProps<ComposerFlowData>
             </>
           )}
 
-          {/* ── 输入需求：文件上传（全量迁移 §1.3：真实读取 + IP 预处理流程 IpStageFlow）── */}
-          {showInputCfg && inputTab === "file" && fileRouting && (
+          {/* ── 上传原作改编（§1.3：真实读取 + IP 预处理流程 IpStageFlow）── */}
+          {showInputCfg && inputTab === "adapted" && fileRouting && (
             <ComposerFileEditor
               nodeId={node.id}
               items={uploadedItems}
@@ -547,8 +629,9 @@ function ComposerFlowNodeRaw({ id, data, selected }: NodeProps<ComposerFlowData>
           )}
 
           {/* ── 入口节点的三轴：类型 / 题材 / 体量。
-                 第四轴「叙事结构」不出面——后端按类型+题材推导（resolveNarrativeStructure），
-                 让用户在这里再选一次结构，等于要他替模型做一个他没有依据的决定。
+                 第四轴「叙事结构」不给用户选，但给他看：它由品类+类型+题材投票推出
+                 （resolveNarrativeStructure），而结构决定整棵剧情树的分叉密度、是否收束、
+                 有几个结局。换一条轴就换出另一种结构，藏起来用户只能盲信一个看不到来路的结论。
                  游戏品类与单品模块也不在这儿：前者由策划专家组选定，后者由单品助手团队定。 ── */}
           {showAxesCfg && (
             <>
@@ -591,6 +674,13 @@ function ComposerFlowNodeRaw({ id, data, selected }: NodeProps<ComposerFlowData>
                   ))}
                 </select>
               </label>
+              <StructureField
+                vote={structureVote}
+                override={(cfg.narrativeStructure as string | null) ?? null}
+                onOverride={(code) => setField({ narrativeStructure: code })}
+                axes={axes}
+                t={t}
+              />
               {/* ── 可挂载席：勾一下就在预置管线里多过一道，不必手连整条链。
                      默认全关——三席都作用在情节层，全开等于情节生成完再过三轮 LLM。 ── */}
               <div className="composer-config__field">

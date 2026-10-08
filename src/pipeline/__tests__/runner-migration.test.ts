@@ -227,8 +227,12 @@ describe("已迁席位的双路等价", () => {
    * 席的实现挂在 alsoOwns 上，解析不到就派生不出 AgentDef。这类条目留在迁移表里
    * 是有意的——席位接回来时不必重做迁移——但必须逐条登记，否则"迁了却没切"就会
    * 变成静默漂移。
+   *
+   * 现在是空的。`playability_adapt` 曾是唯一一条：玩法适配席随 v4 §2.5.20 转 active，
+   * 实现从 alsoOwns 移进 bindings，AgentDef 就派生得出来了 —— 正好是这段注释预留的
+   * 「席位接回来时不必重做迁移」那一步。
    */
-  const MIGRATED_BUT_SEAT_PLANNED = ["playability_adapt"];
+  const MIGRATED_BUT_SEAT_PLANNED: string[] = [];
 
   it("迁移表点名的处理器都真的注册了（名字对不上要到线上才炸）", () => {
     const missing: string[] = [];

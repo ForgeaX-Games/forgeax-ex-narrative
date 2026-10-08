@@ -28,6 +28,7 @@ export * from "./phase5-polish.js";
 
 // A→B 交接契约 + 注入桥
 export * from "./generation-seed.js";
+export * from "./fidelity.js";
 export * from "./injection/operator-injection.js";
 export * from "./injection/slot-registry.js";
 

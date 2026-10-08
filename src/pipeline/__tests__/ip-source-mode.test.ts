@@ -13,7 +13,7 @@ import { LORE_GENERATION_COMPOSER } from "../steps/lore-generation.js";
 import { NARRATIVE_CARD_COMPOSER } from "../steps/narrative-card.js";
 
 /**
- * 上传原作时各席的处置口径（席位表 2.3.1-2.3.13 的「如果上传的是文件」分支）。
+ * 上传原作时各席的处置口径（席位表 2.5.2-2.5.14 的「如果上传的是文件」分支）。
  *
  * 设定层各席的原文写的是「直接提炼文件里的内容即可」——职责是抽取归档；
  * 结构层各席才是改编重组。两者用错口径的后果相反：给世界观席下"重组"指令会让它

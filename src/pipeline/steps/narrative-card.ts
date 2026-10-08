@@ -98,7 +98,7 @@ ${WRITING_CORE.principles.map((p) => `- ${p}`).join("\n")}`,
 5. 关卡拓展要有递进感`,
     user_instructions: (ctx: NarrativeContext): string => userInstructionsBlock(ctx),
   },
-  systemBlockOrder: ["role", "task_spec", "ip_dna", "style_guide", "constraints", "cot", "ip_source", "output_schema"],
+  systemBlockOrder: ["role", "task_spec", "style_guide", "ip_dna", "constraints", "cot", "ip_source", "output_schema"],
   userBlockOrder: [
     "user_request",
     "preset_context",

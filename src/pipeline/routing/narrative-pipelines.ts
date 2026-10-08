@@ -95,16 +95,19 @@ const NARRATIVE_SEATS = ["outline", "structure", "plot"] as const;
 const QA_SEATS = ["structure_check", "content_check"] as const;
 
 /**
- * 打磨三席的挂载点：情节生成之后。
+ * 打磨四席的挂载点。跑不跑由作者定，但挂在哪一席之后由它改的是哪一层决定。
  *
- * 挂在情节席后面而不是管线末尾，是因为它们改的就是情节层，而下游的质检、任务、
- * 分镜都该看到作者最终要的那一版。玩法适配（2.3.19）不在其列——那一席还是
- * planned，接线口径未定。
+ * 前三席改情节正文（`plots_generated`），所以挂在情节席后面而不是管线末尾：下游的
+ * 质检、任务、分镜都该看到作者最终要的那一版。
+ *
+ * 玩法适配（2.5.20）挂在**结构席**后面 —— 它动的是细纲里"玩家做的选择意味着什么"，
+ * 基准字段是 `detailed_outlines_generated`。挂到情节席后面会让它去改一份情节已经照着
+ * 写完了的细纲：改得再好也没人再读，而且不会有任何一步报错。
  */
 const POLISH_ATTACHABLE = [
+  { seatId: "playability", after: "structure" },
   { seatId: "deai", after: "plot" },
   { seatId: "plot_refine", after: "plot" },
-  { seatId: "plot_polish", after: "plot" },
 ] as const;
 
 /**

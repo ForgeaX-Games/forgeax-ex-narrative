@@ -79,7 +79,6 @@ describe("step-output：注册表派生覆盖", () => {
       "content_check",
       "deai_polish",
       "plot_refine",
-      "plot_polish",
       "playability_adapt",
       "encyclopedia_retrieval",
     ];
@@ -137,8 +136,8 @@ describe("step-output：真实管线步序逐步落得出文件", () => {
   });
 
   it("挂上打磨席后新增的那步也落得出文件，且沿用基准步的文件名", () => {
-    const steps = assertEveryStepLands("pl-narrative", ["deai", "plot_refine", "plot_polish"]);
-    for (const id of ["deai_polish", "plot_refine", "plot_polish"]) {
+    const steps = assertEveryStepLands("pl-narrative", ["deai", "plot_refine"]);
+    for (const id of ["deai_polish", "plot_refine"]) {
       expect(steps, id).toContain(id);
       // 同形变换：打磨完还是那份情节节点，不该多出一个文件名。
       expect(STEP_FILE_MAP[id], id).toEqual(STEP_FILE_MAP.plot_generation);

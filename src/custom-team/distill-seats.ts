@@ -53,7 +53,7 @@ export const DISTILL_SEATS: readonly DistillSeat[] = [
     reuses: [
       "ip-dna: runIngest",
       "ip-dna: runExtractAndGenerate(runGeneration=false)",
-      "2.3.20 百科娘：检索作者公开资料",
+      "2.5.1 百科娘：检索作者公开资料",
     ],
     // 作者本人的资料不在用户上传里，只能检索——这就是百科娘必须先落地的原因。
     dependsOnSeats: ["encyclopedia"],

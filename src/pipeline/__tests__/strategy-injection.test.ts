@@ -95,16 +95,44 @@ describe("叙事策略段注入", () => {
     expect(sp).not.toContain("叙事结构策略");
   });
 
-  it("库里没有对应 md 的轴静默留空，不报错也不留占位", () => {
+  /**
+   * 用**不在词表里**的 code，不用"词表里有但库里缺卡"的 code。
+   *
+   * 这条断言原先取 tragedy / cyberpunk / network，因为当时那三张卡还没写。那个前提会随
+   * 补卡消失：三个轴补齐之后它就红了，而红的原因是库变全了 —— 测试把"库还不全"当成了
+   * 被测行为。要守的其实是 loader 的容错（找不到卡就留空，不抛也不留占位），那与词表
+   * 补到什么程度无关，所以拿一个永远不会有卡的 code 才问得准。
+   */
+  it("找不到卡的轴静默留空，不报错也不留占位", () => {
+    const sp = composeSystemPrompt(
+      PREFERENCE_SUMMARY_COMPOSER,
+      ctxWithAxes({
+        narrative_axes: {
+          storyType: "no-such-type" as never,
+          storyTheme: "no-such-theme" as never,
+          structure: "no-such-structure" as never,
+        },
+      }),
+    );
+    expect(sp).toContain("游戏品类叙事策略：JRPG");
+    expect(sp).not.toContain("叙事类型策略");
+    expect(sp).not.toContain("叙事题材策略");
+    expect(sp).not.toContain("叙事结构策略");
+    expect(sp).not.toContain("{{slot:");
+  });
+
+  it("三轴都补齐了卡时，三段都注入", () => {
+    // 上一条只证明"找不到就留空"。这一条是它的反面：找得到就真的进提示词。
+    // 少了它，把策略注入整体关掉也能让上一条绿。
     const sp = composeSystemPrompt(
       PREFERENCE_SUMMARY_COMPOSER,
       ctxWithAxes({
         narrative_axes: { storyType: "tragedy", storyTheme: "cyberpunk", structure: "network" },
       }),
     );
-    expect(sp).toContain("游戏品类叙事策略：JRPG");
-    expect(sp).not.toContain("叙事类型策略");
-    expect(sp).not.toContain("{{slot:");
+    expect(sp).toContain("叙事类型策略：悲剧（Tragedy）");
+    expect(sp).toContain("叙事题材策略：赛博朋克（Cyberpunk）");
+    expect(sp).toContain("叙事结构策略");
   });
 
   it("未换轴的旧条目（无 narrative_axes）行为不变：整段塌缩", () => {

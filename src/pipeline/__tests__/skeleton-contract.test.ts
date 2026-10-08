@@ -36,19 +36,14 @@ import { ITEM_DATABASE_COMPOSER } from "../steps/item-database.js";
  * "段序集中化"的可执行形态：IP DNA 注入块（客观真相→三视角算子→关系→账本）
  * 是 **唯一的、集中定义的** `IP_DNA_SLOT_BLOCK` 常量；所有消费 step 必须：
  *   (1) 复用该集中常量，禁止手写自己的 IP DNA 段（杜绝段序/文案漂移）；
- *   (2) 把它放在骨架规定的位置——**身份/任务之后、品类风格与输出格式之前**。
+ *   (2) 把它放在骨架规定的位置——**身份/任务与叙事策略之后、素材与输出格式之前**。
  *
  * 四期确认内联块即唯一生产路径（md 库已吸收归档），本契约因此长期有效：
  * 未来新增 step 时，段序不会偏离 §7.2b 单一骨架。
  */
 
-// 骨架中排在 IP DNA 段【之后】的插槽对应的 block 名（风格/约束/流程/输出）。
+// 骨架中排在 IP DNA 段【之后】的插槽对应的 block 名（素材/约束/流程/输出）。
 const POST_IPDNA_BLOCKS = new Set<string>([
-  "genre_style",
-  "style_guide",
-  "worldview_archetype",
-  "character_archetype",
-  "archetypes",
   "examples",
   "constraints",
   "cot",
@@ -212,12 +207,27 @@ describe("P1.1 单一骨架契约：IP DNA 段集中定义 + 段序合规", () =
       const iIp = order.indexOf("ip_dna");
       expect(iIp, `${label} systemBlockOrder 未含 ip_dna`).toBeGreaterThanOrEqual(1);
 
-      // (3) ip_dna 必须排在所有"风格/约束/输出"类块之前。
+      // (3) ip_dna 必须排在所有"素材/约束/输出"类块之前。
       for (let i = 0; i < iIp; i++) {
         expect(
           POST_IPDNA_BLOCKS.has(order[i]!),
-          `${label}: "${order[i]}" 属风格/输出段，不应排在 IP DNA 之前`,
+          `${label}: "${order[i]}" 属素材/输出段，不应排在 IP DNA 之前`,
         ).toBe(false);
+      }
+
+      /**
+       * (4) 反过来，叙事策略段必须排在 IP DNA 之前。
+       *
+       * 这一条与本文件早先的写法正好相反——那时品类风格被归为"IP DNA 之后"。
+       * 骨架三期换过轴（见 prompt/skeleton.ts 头部）：策略先立、DNA 后填，免得品类
+       * 风格被算子内容淹没。契约当时没跟着改，于是十个 step 一直按旧序排，而骨架
+       * 那份说明写的是新序——两边各说各话，谁也不知道以哪个为准。这里收口到骨架。
+       */
+      for (const strategyBlock of ["strategy", "style_guide", "worldview_archetype", "character_archetype"]) {
+        const iStrategy = order.indexOf(strategyBlock);
+        if (iStrategy >= 0) {
+          expect(iStrategy, `${label}: "${strategyBlock}" 应排在 IP DNA 之前`).toBeLessThan(iIp);
+        }
       }
     });
   }

@@ -10,7 +10,7 @@ import "../blueprint/agent-def-registrations.js";
  * M3 结构表达（story_framework）的双路等价护栏。
  *
  * story_framework 是第一个迁上 sequence 原语的席位：route（deterministic）→
- * plan（llm）→ prepare_full/prepare_regen（deterministic，互斥）→ fill（llm）四阶段，
+ * plan（llm）→ prepare_full/prepare_fixed（deterministic，互斥）→ fill（llm）四阶段，
  * 与 runner-migration-m2.test.ts 同一惯例——legacy step 函数与 runner 必须对同一份
  * ctx、同一批模型输出写回一模一样的东西，三种模式（full/regen/skip）都要核。
  */

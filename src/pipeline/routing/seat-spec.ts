@@ -179,6 +179,16 @@ export interface SeatSpec {
    * 为准，老实现只提供「这件事以前是怎么做的、哪部分还能用」。
    */
   migrateFrom?: string[];
+  /**
+   * 本席副实现各自的执行原语（键是 step id）。
+   *
+   * 原语本是**实现**的属性，这张表按席位存它，前提是一席一实现——多数席位成立。
+   * 情节席不成立：情节生成逐节点分批（chunked），它派生的状态账本是一次性折叠
+   * （single-turn），同一席两种形状。没有这个覆盖，副实现会拿到主实现的分片配置。
+   *
+   * 只登记与席位原语不同的那些。缺省即"与本席一致"。
+   */
+  substepStructures?: Readonly<Record<string, AgentStructureType>>;
 }
 
 /**
@@ -190,6 +200,15 @@ export interface SeatSpec {
  *   - 故事结构助手「剧情树框架 + 标最优路径」——树在结构层成形，情节层只填内容。
  */
 export const SEAT_SPECS: readonly SeatSpec[] = [
+  {
+    seatId: "entry_config",
+    csvName: "叙事生成配置助手（入口）",
+    brief: "总起和统领整个任务与管线",
+    csvShape: "单agent",
+    prototype: SHAPE_PROTOTYPE["单agent"],
+    strategy: NO_STRATEGY,
+    ipDna: NO_IP_DNA,
+  },
   {
     seatId: "encyclopedia",
     csvName: "百科娘",
@@ -280,6 +299,15 @@ export const SEAT_SPECS: readonly SeatSpec[] = [
     strategy: ALL_STRATEGY,
     ipDna: { mode: "layer", unit: "story_unit", operators: "bottom" },
     migrateFrom: ["outline_batch", "detailed_outline"],
+    /**
+     * 两个实现各自永远是原子调用，串行是**席位整体**的形状（由 composite 外壳表达，
+     * 见 agent-def-registrations.ts 的 "structure"）。
+     *
+     * 这曾经登记在 SHAPE_DIVERGENCES 里，而登记的定义是"声明与实现打架、待修"——
+     * 这一条不是待修，它自己的 blocker 里就写着"本就是两层事实"。一张表同时装
+     * 待修的落差与不打算改的事实，读表的人分不出哪条该跟进。
+     */
+    substepStructures: { outline_batch: "single-turn", detailed_outline: "single-turn" },
   },
   {
     seatId: "plot",
@@ -290,6 +318,8 @@ export const SEAT_SPECS: readonly SeatSpec[] = [
     strategy: NO_STRATEGY,
     ipDna: { mode: "layer", unit: "story_unit", operators: "bottom" },
     migrateFrom: ["plot_generation"],
+    // 账本折的是全树，一次做完；逐节点分批是情节生成那一半的事。
+    substepStructures: { state_ledger: "single-turn" },
   },
   {
     seatId: "quest",
@@ -360,6 +390,15 @@ export const SEAT_SPECS: readonly SeatSpec[] = [
     ipDna: NO_IP_DNA,
   },
   {
+    seatId: "structure_optimize",
+    csvName: "结构优化助手",
+    brief: "优化生成的故事结构",
+    csvShape: "单agent",
+    prototype: SHAPE_PROTOTYPE["单agent"],
+    strategy: NO_STRATEGY,
+    ipDna: NO_IP_DNA,
+  },
+  {
     seatId: "plot_refine",
     csvName: "情节优化助手",
     brief: "优化生成的情节的人物刻画、剧情推进和环境描写",
@@ -369,18 +408,18 @@ export const SEAT_SPECS: readonly SeatSpec[] = [
     ipDna: NO_IP_DNA,
   },
   {
-    seatId: "plot_polish",
-    csvName: "情节润色助手",
-    brief: "优化生成的情节的表达方式和表现手法",
+    seatId: "playability",
+    csvName: "玩法适配助手",
+    brief: "适配叙事&玩法",
     csvShape: "单agent",
     prototype: SHAPE_PROTOTYPE["单agent"],
     strategy: NO_STRATEGY,
     ipDna: NO_IP_DNA,
   },
   {
-    seatId: "playability",
-    csvName: "玩法适配助手",
-    brief: "适配叙事&玩法",
+    seatId: "narration",
+    csvName: "旁白解说助手",
+    brief: "适配旁白解说类型叙事",
     csvShape: "单agent",
     prototype: SHAPE_PROTOTYPE["单agent"],
     strategy: NO_STRATEGY,
@@ -427,20 +466,22 @@ export const PROTOTYPE_PRIMITIVE: Readonly<Record<AgentPrototype, AgentStructure
 };
 
 export const SHAPE_DIVERGENCES: readonly ShapeDivergence[] = [
-  {
-    seatId: "character",
-    actual: "single-turn",
-    // 措辞是核过实现的：character-enrichment 里没有任何分批代码，一次调用出全部角色。
-    // 所以这不是"落差"（声明与实现打架待修），而是"条件并发未启用"——分批只在
-    // 体量大这个条件下才需要触发，执行路径已迁 runner（RUNNER_MIGRATIONS 登记了
-    // 校验与归一），形态仍是单轮，纯属性能/质量优化，不阻塞框架跑通判定。
-    blocker: "条件并发未启用：声明体量大时应分批，实现始终一次调用出全部角色",
-  },
+  // 角色席的登记已删（v4）：分批落地了。删登记而不是把 blocker 改成"已完成"——
+  // 登记的定义就是 actual ≠ 声明形态，做到了就该从表上消失，`PROTOTYPE_PRIMITIVE`
+  // 自动接管。切分键是核心设定给的角色名单，每批几个由体量定。
   {
     seatId: "item",
     actual: "single-turn",
-    // 同角色席：属"条件并发未启用"而非落差，item-database 亦为单次调用出全部道具。
-    blocker: "条件并发未启用：同角色席，item-database 亦为单次调用出全部道具",
+    /**
+     * 与角色席看着同病，实则不同源：角色席分得了批，是因为"要写谁"在开工前已知
+     * （核心设定列了主角与关键 NPC）。道具席没有这样一份名单——它要产出哪些道具，
+     * 正是它自己这一趟要决定的事。
+     *
+     * 所以它的分批不是 chunked 能表达的：得先出一份道具名录，再按名录分批填详情，
+     * 两阶段之间有依赖，那是 sequence 内嵌 chunked。硬按角色切也不行，场景道具与
+     * 无主道具没有归属角色，会整类漏掉。
+     */
+    blocker: "缺可切分键：道具名录本身由本席产出，分批需先出名录再填详情（sequence 内嵌 chunked），非 chunked 可表达",
   },
   {
     seatId: "scene_list",
@@ -451,27 +492,22 @@ export const SHAPE_DIVERGENCES: readonly ShapeDivergence[] = [
     // 前提已经不成立：那段分层提炼是**后向取证**（从写好的剧情里倒推场景），它连同
     // 波次形状一起搬去了内容检查席的 scene_evidence 子步——在那里输入才齐备。
     //
-    // 留在本席的是前向规划（scene_plan）：从世界观一次推演出整棵树，再交确定性聚合器
-    // 补 UID。它今天确实是单轮，与 CSV 声明的"多agent（场景树）"仍有距离——声明想要的是
-    // 按层分轮产出（先定区域，再据区域定地域……），让每层的判断都能看着上一层做。
-    // 那是质量优化而非跑不通，故继续登记为落差而不是假装对齐。
-    blocker: "前向 scene_plan 一次调用出整棵树；声明的按层分轮产出（层间依赖）尚未实现，后向那半的波次形状已随 scene_evidence 迁往内容检查席",
+    // 留在本席的是前向规划（scene_plan）。v4 起它**已按层分轮**：第一轮定 0-2 层的
+    // 地理骨架，第二轮拿着已定的地域往下展开 3-5 层，再交确定性聚合器补 UID。
+    // 声明想要的"让每层的判断都能看着上一层做"这件事本身做到了。
+    //
+    // 仍然登记，是因为两轮串行发生在一个 legacy step 函数**内部**——对 runner 而言
+    // 它还是一次不透明调用，原语层面仍是 single-turn。要真正对齐 nested，得把每轮
+    // 登记成独立 agent 并建席位外壳（结构席的 composite 就是那个样子）。
+    blocker: "按层分轮已在 step 内落地（两轮串行），但未表达为 runner 可见的原语——两轮仍在一个不透明的 legacy step 里；后向那半的波次形状已随 scene_evidence 迁往内容检查席",
   },
   // outline 席已无落差（C1）：原第二条 binding vn_outline_acts 随 vn-v2 一并封存，
   // 本席现在只剩 story_framework 一个实现，且已显式登记 RUNNER_MIGRATIONS.sequence
   // （buildSeatAgentDef 里 migration.sequence 直接命中，绕过本表），不再有任何实现
   // 落在这张表的 fallback 上——按迁移完成的惯例删登记，不改 blocker 措辞。
-  {
-    seatId: "structure",
-    actual: "single-turn",
-    // 席位级工作流外壳已建（见 agent-def-registrations.ts 的 "structure" composite，
-    // children=[outline_batch, detailed_outline] 按 edges 串行）。这条登记留着是因为
-    // executableStructureFor("structure") 仍被 buildSeatAgentDef 用作
-    // outline_batch/detailed_outline 各自派生 structure.type 时的兜底——这两个实现
-    // 本身永远是原子调用，不会也不该变成 sequence，所以登记不是"迁移未完成"，
-    // 而是"声明形态（席位整体）与实现形态（单个 legacy 实现）本就是两层事实"。
-    blocker: "outline_batch/detailed_outline 各自仍是原子调用；席位整体的串行已由 composite 外壳表达，非声明形态那层",
-  },
+  // 结构席已移出本表（v4）：它从来不是"待修的落差"——席位整体的串行由 composite
+  // 外壳表达，两个实现各自永远是原子调用，这是两层事实而非打架。现在由该席
+  // SeatSpec 的 `substepStructures` 显式说出实现层那一层，本表回归"只装待修的"。
   // plot 席已无落差（C3）：原另两条 binding（tpl-emergent emergent_event /
   // tpl-card-game event_pool）随实现本体于 C3 一并封存进 `_archive/specialized/`，
   // 本席现在只剩 plot_generation 一个实现，已显式登记 RUNNER_MIGRATIONS.wave
@@ -505,11 +541,16 @@ const DIVERGENCE_INDEX: ReadonlyMap<string, ShapeDivergence> = new Map(
 
 /**
  * 该席今天该用哪个执行原语：登记了落差就用登记值，否则按声明形态取 PROTOTYPE_PRIMITIVE。
+ *
+ * 给了 stepId 且它登记在 `substepStructures` 里时以那一档为准——一席多实现时，形状
+ * 是实现的属性而不是席位的（见该字段的说明）。
  */
-export function executableStructureFor(seatId: string): AgentStructureType {
+export function executableStructureFor(seatId: string, stepId?: string): AgentStructureType {
+  const spec = SPEC_INDEX.get(seatId);
+  const substep = stepId ? spec?.substepStructures?.[stepId] : undefined;
+  if (substep) return substep;
   const divergence = DIVERGENCE_INDEX.get(seatId);
   if (divergence) return divergence.actual;
-  const spec = SPEC_INDEX.get(seatId);
   return spec ? PROTOTYPE_PRIMITIVE[spec.prototype] : "single-turn";
 }
 

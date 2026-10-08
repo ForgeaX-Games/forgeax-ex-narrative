@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { normalizeTemplate } from "../phase2-extract.js";
-import { hydrateContextFromSeed, isIpDnaSeeded, type GenerationSeed } from "../generation-seed.js";
+import { hydrateContextFromSeed, type GenerationSeed } from "../generation-seed.js";
+import { isIpDnaSeeded } from "../fidelity.js";
 import type { NarrativeIpDna } from "../../types/narrative-ip-dna.js";
 import type { NarrativeContext } from "../../types/index.js";
 
@@ -24,11 +25,7 @@ function makeSeed(): GenerationSeed {
     ledger: { story_id: "20260101_0000", storyTitle: "冰封", entries: [] },
     userInput: "忠实改编\n\n关系简报",
     complexity: 0.6,
-    family: "rpg",
-    targetStructure: {
-      l0_nodes: 3, l1_per_parent: 4, l2_per_parent: 5, enable_branch: false, plot_length: 40,
-    } as never,
-    vnActCount: 5,
+    nodeBudgetOverride: { l0_nodes: 3, l1_per_parent: 4, l2_per_parent: 5 },
     relationNetwork: "关系简报",
   };
 }
@@ -40,17 +37,26 @@ describe("GenerationSeed hydrate (T4)", () => {
     expect((ctx as Record<string, unknown>)._long_memory_ledger).toBeTruthy();
     expect(ctx.user_input).toContain("关系简报");
     expect(ctx.complexity).toBe(0.6);
-    // RPG → global_control_params.target_structure
-    expect(ctx.global_control_params?.target_structure?.plot_length).toBe(40);
-    expect(ctx.vn_target_act_count).toBe(5);
+    // 节点预算 → global_control_params.node_budget_override（每层开几个节点，不是叙事结构）
+    const budget = ctx.global_control_params?.node_budget_override;
+    expect(budget).toEqual({ l0_nodes: 3, l1_per_parent: 4, l2_per_parent: 5 });
     expect(ctx.relation_network).toBe("关系简报");
   });
 
-  it("does not set global_control_params for vn family", () => {
-    const seed = { ...makeSeed(), family: "vn" as const };
-    const ctx = hydrateContextFromSeed(seed);
-    expect(ctx.global_control_params).toBeUndefined();
-    expect(ctx.vn_target_act_count).toBe(5);
+  /**
+   * 预算不看品类。
+   *
+   * 这里曾有一条反向断言，要求 vn 家族**不要**设 global_control_params —— 它冻结的是个
+   * bug：缺省家族正是 vn，于是缺省路径下改编选的体量算了也白算。家族随之删除，预算
+   * 无条件生效。
+   */
+  it("applies the node budget without asking what genre it is", () => {
+    const ctx = hydrateContextFromSeed(makeSeed());
+    expect(ctx.global_control_params?.node_budget_override).toEqual({
+      l0_nodes: 3,
+      l1_per_parent: 4,
+      l2_per_parent: 5,
+    });
   });
 
   it("hydrates operatorLayers into ctx._operator_layers (§3.2)", () => {

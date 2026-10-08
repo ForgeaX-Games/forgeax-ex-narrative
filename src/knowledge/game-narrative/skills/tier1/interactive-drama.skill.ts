@@ -1,11 +1,17 @@
 /**
- * Interactive Drama / 互动影游 (adv-interactive) — tpl-vn-v2 专属管线 skill
+ * Interactive Drama / 互动影游 (adv-interactive) —— 品类风格注入
  *
- * 关键差异（相对于其他 VN 家族）：
- *   1. 使用 tpl-vn-v2 专属管线（E1+E2+G 9 步独立实现）
- *   2. 不再借用 tpl-vn 的 branch_tree / dialogue_script / cinematic_storyboard 旧 step
- *   3. skill 仅在借用的通用 step（worldview / preference_analysis）上做风格注入
- *      9 个 vn-v2 专属 step 的核心约束已经写进各自 system prompt，skill 可在 vn_* 槽位补充品类微调
+ * 这个品类是 IP 改编未指定品类时的缺省品类（`DEFAULT_ADAPTATION_GENRE`），所以它的
+ * 注入点失配就是缺省路径失配。
+ *
+ * 三段风格文本从前挂在 `vn_branched_beats` / `vn_screenplay` / `vn_storyboard` 上。C1
+ * （2026-08）统一管线后那三个 step 随 tpl-vn-v2 一并封存进 `pipeline/_archive/vn-v2/`，
+ * 而 `getStepSkill` 按 step id 精确查表 —— 键对不上就静默返回空，三段内容在生产路径上
+ * 一处也注入不到。现在挂在通用步序上：剧情树倾向归 `outline_batch`（树在结构层成形），
+ * 对白风格归 `script_generation`（L4 剧本那一步）。
+ *
+ * 分镜那段没有归宿，删了：它讲的是决策 QTE 的镜头与 `reuse_from` 字段复用，两者都随
+ * vn-v2 停用。留着只会让模型去产出一个没有消费者的东西。
  */
 import type { NarrativeSkill } from "../../skill-types.js";
 import { registerSkill } from "../../skill-loader.js";
@@ -19,11 +25,11 @@ const ID_WORLDVIEW = `
 `.trim();
 
 const ID_BRANCH_DIRECTION = `
-# 互动影游剧情树设计倾向（仅作为风格补充，硬约束在 vn_branched_beats 系统提示中）
-- 偏好"网状收束"：多个分支可在中段汇流于同一关键场（merge_back）
+# 互动影游剧情树设计倾向（仅作为风格补充，硬约束在结构层系统提示中）
+- 偏好"网状收束"：多个分支可在中段汇流于同一关键场（merge）
 - 蝴蝶效应：一个早期选择可在 3-5 个情节点后才显现后果
 - 至少标识 1-2 名"可死亡角色"，并写入 ending 触发条件
-- 主结局矩阵建议覆盖 H/B/O 三类，但具体数量按剧情需求来定
+- 主结局矩阵建议覆盖 good/bad/neutral 三类，但具体数量按剧情需求来定
 `.trim();
 
 const ID_SCREENPLAY = `
@@ -34,13 +40,6 @@ const ID_SCREENPLAY = `
 - 对白的情绪基调贴合"紧张-松弛-紧张"节奏
 `.trim();
 
-const ID_STORYBOARD = `
-# 互动影游分镜风格
-- 偏好电影化运镜：长镜头与精准切镜交错，避免抖动手持过度使用
-- 决策 QTE 镜头务必让玩家看清动作（中/近景，静止或轻推）
-- 同场反复出现的同一动作可通过 reuse_from 复用，节省视觉资源
-`.trim();
-
 export const INTERACTIVE_DRAMA_SKILL: NarrativeSkill = {
   genreCode: "adv-interactive",
   tier: "tier1",
@@ -48,16 +47,13 @@ export const INTERACTIVE_DRAMA_SKILL: NarrativeSkill = {
     "互动影游", "互动电影", "互动剧", "FMV", "QTE",
     "Detroit", "Heavy Rain", "暴雨", "底特律", "隐形守护者",
   ],
-  // tpl-vn-v2 已内置 9 步全量管线，无需 enableSteps 启用额外环节
-  // Stage C：默认短剧 1 幕；用户在 INPUT 写 "5 幕长剧" 等关键词时仍可被 user_input 覆盖
+  // 叙事规模：默认短剧 1 幕；用户在 INPUT 写 "5 幕长剧" 等关键词时仍可被覆盖。
+  // 这里的"幕"是 initial_plan 的叙事规模，与三层剧情树无关（那一侧已无幕）。
   defaultActs: 1,
   stepSkills: {
-    // 借用的通用 step（仅风格注入）
     worldview: { slots: { worldview_archetype: ID_WORLDVIEW } },
-    // tpl-vn-v2 专属 step（slot 名与各 step 内容文本无依赖，作为可选补丁）
-    vn_branched_beats: { slots: { style_guide: ID_BRANCH_DIRECTION } },
-    vn_screenplay: { slots: { style_guide: ID_SCREENPLAY } },
-    vn_storyboard: { slots: { style_guide: ID_STORYBOARD } },
+    outline_batch: { slots: { style_guide: ID_BRANCH_DIRECTION } },
+    script_generation: { slots: { style_guide: ID_SCREENPLAY } },
   },
 };
 

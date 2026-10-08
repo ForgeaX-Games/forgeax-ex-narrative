@@ -30,7 +30,8 @@ import { extractJSON } from "../../runtime/llm-client.js";
 import { appendUserInstructions } from "../../steps/design-context-helper.js";
 import { composeSystemPrompt, IP_DNA_SLOT_BLOCK, type PromptComposer } from "../../runtime/prompt-composer.js";
 import { getStreamEmit, runBySegments } from "./_shared.js";
-import { computeWorldSnapshot } from "./vn-state-ledger.js";
+import { computeWorldSnapshot } from "../../graph/state-ledger.js";
+import { vnBeatsToLedgerNodes } from "./vn-state-ledger.js";
 
 /** 段级并行度：互不依赖的线性段同时跑 */
 const SEGMENT_CONCURRENCY = 4;
@@ -169,7 +170,11 @@ function buildBatchUserPrompt(
   let snapshotBlock = "";
   if (ctx.world_state_ledger && treeBeats.length > 0) {
     const allBeats = ctx.vn_branched_beats?.beats ?? [];
-    const snapshot = computeWorldSnapshot(ctx.world_state_ledger, treeBeats[0].beat_id, allBeats);
+    const snapshot = computeWorldSnapshot(
+      ctx.world_state_ledger,
+      treeBeats[0].beat_id,
+      vnBeatsToLedgerNodes(allBeats),
+    );
     snapshotBlock = `\n## 世界时空参考（辅助镜头连贯性判断）\n时空：${snapshot.spacetime.time} · ${snapshot.spacetime.location}\n`;
   }
 

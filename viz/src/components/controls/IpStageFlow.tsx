@@ -764,21 +764,16 @@ export function IpStageFlow(props: IpStageFlowProps) {
       t("ipc.extract.startNote"),
     ].join("\n");
     props.onStageProgress?.("ip_dna_extract", "running", t("ipc.msg.genDna"), extractText);
-    // §图2 品类透传 + P0-1（§4.4d 目标输出形态锁定）：把 ROUTING 选定的 genreCode 一并发给 generate，
-    // 并显式透传 pipeline_family——IP 改编旗舰场景 = 互动叙事(VN)，避免默认漂移到 rpg/design_auto。
-    // family 派生：已知 VN/RPG 品类才显式设定；未知品类省略交后端据 genre_code 派生；无品类选择则缺省 vn。
+    // §图2 品类透传：把 ROUTING 选定的 genreCode 一并发给 generate。
+    // 这里曾额外用正则从品类名猜一个 rpg/vn「管线家族」发过去。品类本身已经透传了，
+    // 猜出来的桶只会与它冲突；没选品类时后端的缺省品类就是互动叙事。
     const routedGenre = useNarrativeStore.getState().activeConfig?.genreCode ?? undefined;
-    const VN_GENRE_HINT = /(adv-interactive|adv-avg|vn|galgame|visual|interactive|avg)/i;
-    const targetFamily: "rpg" | "vn" | undefined = routedGenre
-      ? (VN_GENRE_HINT.test(routedGenre) ? "vn" : /rpg/i.test(routedGenre) ? "rpg" : undefined)
-      : "vn";
     try {
       const resp = await ipDnaGenerate(runId, {
         tier,
         generationMode: mode,
         complexity,
         ...(routedGenre ? { genreCode: routedGenre } : {}),
-        ...(targetFamily ? { pipelineFamily: targetFamily } : {}),
         async: true,
       });
       const jobId = (resp as unknown as IpDnaJobStartResponse).jobId;

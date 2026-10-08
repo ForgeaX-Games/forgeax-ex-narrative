@@ -24,6 +24,7 @@ import {
 } from "./processor-registry.js";
 import { registerStageComposer } from "./stage-composer-registry.js";
 import {
+  characterBatches,
   validateCharacterEnrichment,
   normalizeCharacterSheets,
 } from "../steps/character-enrichment.js";
@@ -63,7 +64,6 @@ import {
 import {
   DEAI_SPEC,
   PLOT_REFINE_SPEC,
-  PLOT_POLISH_SPEC,
   PLAYABILITY_SPEC,
 } from "../steps/polish-seats.js";
 import {
@@ -72,7 +72,7 @@ import {
   validateStoryFrameworkPlan,
   validateStoryFrameworkFill,
   storyFrameworkRoute,
-  storyFrameworkPrepareRegen,
+  storyFrameworkPrepareFixed,
   storyFrameworkPrepareFull,
   normalizeStoryFramework,
 } from "../steps/story-framework.js";
@@ -101,6 +101,31 @@ registerValidator("character_enrichment_validator", (raw) => {
 registerNormalizer("character_enrichment_normalizer", (parsed, ctx) =>
   // 顺带派生 ctx.player_name —— runner 只写 io.outputField，派生字段没有别的落点。
   normalizeCharacterSheets(parsed, ctx),
+);
+
+/**
+ * 角色席按名单分批（体量大时才真的分，见 `characterBatches`）。
+ *
+ * 名单为空时返回单片：核心设定没给名单，本席退回它原本的跑法（一次调用出全部）。
+ * 返回空数组会让 runner 认为"无事可做"，那与"不分批"是两回事。
+ */
+registerSplitter("character_enrichment_splitter", (ctx) => {
+  const batches = characterBatches(ctx);
+  if (batches.length === 0) return [{ chunkId: "all", data: {} }];
+  return batches.map((names, i) => ({ chunkId: `cb${i + 1}`, data: { names } }));
+});
+
+/**
+ * 合并各批档案后再走一次整体归一。
+ *
+ * 归一必须在合并之后：主角兜底与 `player_name` 派生看的是全名单——按批做的话，
+ * 每一批都会把自己的头一个人立成主角。
+ */
+registerMerger("character_enrichment_merger", (chunks, ctx) =>
+  normalizeCharacterSheets(
+    chunks.flatMap((c) => (Array.isArray(c.output) ? c.output : [])),
+    ctx,
+  ),
 );
 
 registerValidator("item_database_validator", (raw) => {
@@ -203,7 +228,7 @@ registerValidator("encyclopedia_validator", (raw) => {
 registerNormalizer("encyclopedia_normalizer", (parsed, ctx) => normalizeEncyclopedia(parsed, ctx));
 registerPreflight("encyclopedia_preflight", (ctx, llm) => encyclopediaPreflight(ctx, llm));
 
-// ── 打磨家族四席：deai_polish / plot_refine / plot_polish / playability_adapt ──
+// ── 打磨家族三席：deai_polish / plot_refine / playability_adapt ──
 //
 // 四席共用 polish-family 的splitter/merger/chunk_done 工厂，只是各自套自己的 PolishSeatSpec，
 // 与 buildPolishComposer 按 spec 出各自 composer 是同一惯例。
@@ -218,10 +243,6 @@ registerSplitter("plot_refine_splitter", polishSplitter(PLOT_REFINE_SPEC));
 registerChunkSink("plot_refine_chunk_done", polishChunkDone(PLOT_REFINE_SPEC));
 registerMerger("plot_refine_merger", polishMerger(PLOT_REFINE_SPEC));
 
-registerValidator("plot_polish_validator", (raw) => validatePolishOutput(raw));
-registerSplitter("plot_polish_splitter", polishSplitter(PLOT_POLISH_SPEC));
-registerChunkSink("plot_polish_chunk_done", polishChunkDone(PLOT_POLISH_SPEC));
-registerMerger("plot_polish_merger", polishMerger(PLOT_POLISH_SPEC));
 
 registerValidator("playability_adapt_validator", (raw) => validatePolishOutput(raw));
 registerSplitter("playability_adapt_splitter", polishSplitter(PLAYABILITY_SPEC));
@@ -235,7 +256,7 @@ registerStageComposer("story_framework_fill", STORY_FRAMEWORK_FILL_COMPOSER);
 registerValidator("story_framework_plan_validator", (raw, ctx) => validateStoryFrameworkPlan(raw, ctx));
 registerValidator("story_framework_fill_validator", (raw) => validateStoryFrameworkFill(raw));
 registerProcessor("story_framework_route", (ctx) => storyFrameworkRoute(ctx));
-registerProcessor("story_framework_prepare_regen", (ctx) => storyFrameworkPrepareRegen(ctx));
+registerProcessor("story_framework_prepare_fixed", (ctx) => storyFrameworkPrepareFixed(ctx));
 registerProcessor("story_framework_prepare_full", (ctx) => storyFrameworkPrepareFull(ctx));
 registerNormalizer("story_framework_normalizer", (parsed, ctx) => normalizeStoryFramework(parsed, ctx));
 

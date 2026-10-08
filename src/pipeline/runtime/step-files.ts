@@ -31,6 +31,7 @@ export const STEP_FILE_MAP: Record<string, { index: string; name: string; ext: s
   // 旧 id 保留一条同名条目，供旧 run 目录与 _entry.json.assets[] 的路径反查。
   scene_plan:           { index: "14", name: "场景节点",   ext: "json" },
   scene_generation:     { index: "14", name: "场景节点",   ext: "json" },
+  state_ledger:         { index: "11a", name: "状态账本", ext: "json" },
   scene_evidence:       { index: "20a", name: "场景取证", ext: "json" },
   script_scene_generation: { index: "12", name: "剧本场景", ext: "json" },
   structure_validation_l1: { index: "07a", name: "L1结构验证", ext: "json" },
@@ -41,7 +42,7 @@ export const STEP_FILE_MAP: Record<string, { index: string; name: string; ext: s
   // 百科娘：外部资料汇编。不在任何默认步序里，但仍需落盘条目——否则单独跑完
   // 前端"已生成"卡片打开会是空白，fork 时也不会被拷到新目录。
   encyclopedia_retrieval: { index: "18", name: "资料汇编", ext: "json" },
-  // 质检与打磨席位（2.3.14–2.3.19）。
+  // 质检与打磨席位（2.5.15–2.5.20）。
   // 结构检查此前漏了条目，于是它的报告从来没落过盘（saveStepIncremental 查不到 fileDef
   // 就直接 return，不报错），前端"已生成"卡片打开是空白。两个变体共用同一份文件名：
   // 同一席位的同一份报告，跑的是哪个实现不该改变产物叫什么。
@@ -101,7 +102,6 @@ export const STEP_FILE_MAP: Record<string, { index: string; name: string; ext: s
 export const INPLACE_TRANSFORM_STEPS: Record<string, string> = {
   deai_polish: "plot_generation",
   plot_refine: "plot_generation",
-  plot_polish: "plot_generation",
   playability_adapt: "detailed_outline",
 };
 

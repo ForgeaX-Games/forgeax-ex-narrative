@@ -15,10 +15,10 @@ import type { OperatorPerspective } from "../../types/narrative-ip-dna.js";
 import { parseNpyFloat32, cosineTopK, rrfFuse, HybridOperatorRetriever } from "../phase3-vector.js";
 import { untar, expandArchives, isArchive } from "../phase0-compress.js";
 import { transcribeMediaFiles } from "../phase1-multimodal.js";
-import { mapGameUnitToPipeline, representativeGenreForFamily } from "../phase2c-gen-adapt.js";
+import { mapGameUnitToPipeline } from "../phase2c-gen-adapt.js";
 import { findGenreByCode } from "../../knowledge/genre-taxonomy.js";
 import { analyzeRewriteImpact } from "../phase4-rewrite.js";
-import { runIpDnaPipeline, buildGenerationPipelineConfig } from "../orchestrator.js";
+import { runIpDnaPipeline, buildGenerationPipelineConfig, DEFAULT_ADAPTATION_GENRE } from "../orchestrator.js";
 
 import {
   buildOperatorInjection,
@@ -28,6 +28,10 @@ import {
 import { isOperatorConsumingStep, getSlotSpec } from "../injection/slot-registry.js";
 import { resolveIpDnaRuntimeAdapters } from "../runtime-adapters.js";
 import { loadRetrievalConfig } from "../phase3-vector.js";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { accumulateOperators } from "../../knowledge/narrative-library/store.js";
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "ipdna-b2-"));
 afterAll(() => { try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* noop */ } });
@@ -85,6 +89,8 @@ describe("conflict predicate", () => {
 
 // ── 运行时适配器解析（批2 RAG 生产接通）──
 describe("ip-dna runtime adapters (shared by CLI + server)", () => {
+  // 这条要探本地 e5 模型在不在位（磁盘扫描 + 可能的加载），机器一忙就顶到默认 5s
+  // 超时，于是整条 gate 随机变红。给它自己的余量：它验的是"解析不抛错"，不是快。
   it("resolves without throwing; frameSampler always present, embedder iff local e5 model exists", async () => {
     const { queryEmbedder, frameSampler, retrievalConfig } = await resolveIpDnaRuntimeAdapters({});
     expect(typeof frameSampler).toBe("function");
@@ -98,7 +104,7 @@ describe("ip-dna runtime adapters (shared by CLI + server)", () => {
       expect(queryEmbedder).toBeUndefined();
     }
     expect(retrievalConfig).toBeTruthy();
-  });
+  }, 30_000);
 });
 
 // ── 冲突消解接入选取链（h4）──
@@ -167,12 +173,47 @@ describe("operator injection adapter", () => {
     };
   }
 
-  it("returns null for non-consuming step or missing IP DNA", async () => {
+  it("returns null for a non-consuming step, and for missing IP DNA with an empty library", async () => {
     setSharedRetriever(mockRetriever);
+    /**
+     * 没有 IP DNA 也不再直接空手而归——算子与它出自哪部作品无关，原创作品可以从
+     * 积累下来的算子库里借。所以"没 DNA 就是 null"只在库也空的时候成立，
+     * 这里把库指到一个空目录，让断言说的是那一种情况。
+     *
+     * 不指的话这条用例会读到本机跑过的真实库（库按工作目录定位），于是同一份代码
+     * 在跑过生成的机器上失败、在干净机器上通过——那种红不说明任何事。
+     */
+    const emptyLibrary = mkdtempSync(path.join(tmpdir(), "narrative-lib-"));
     const ctxNoDna: NarrativeContext = { user_input: "x" };
-    expect(await buildOperatorInjection(ctxNoDna, "plot_generation", {} as never)).toBeNull();
+    expect(
+      await buildOperatorInjection(ctxNoDna, "plot_generation", {} as never, { cwd: emptyLibrary }),
+    ).toBeNull();
     const ctxWithDna: NarrativeContext = { user_input: "x", narrativeIpDna: scopedDna() };
     expect(await buildOperatorInjection(ctxWithDna, "tier_router", {} as never)).toBeNull();
+    setSharedRetriever(null);
+  });
+
+  it("borrows from the accumulated library when there is no IP DNA", async () => {
+    setSharedRetriever(mockRetriever);
+    const lib = mkdtempSync(path.join(tmpdir(), "narrative-lib-"));
+    accumulateOperators(
+      [{
+        uid: "op-borrow-1",
+        name: "延迟揭示",
+        definition: "把关键信息压到读者以为已经错过它的那一刻再给",
+        adaptation: { type: "plot", element: "揭示时机" },
+      } as never],
+      { storyId: "s1", title: "别的作品" },
+      { cwd: lib },
+    );
+    const fragment = await buildOperatorInjection(
+      { user_input: "原创" },
+      "plot_generation",
+      {} as never,
+      { cwd: lib },
+    );
+    expect(fragment).not.toBeNull();
+    expect(JSON.stringify(fragment)).toContain("延迟揭示");
     setSharedRetriever(null);
   });
 
@@ -296,60 +337,53 @@ describe("multimodal transcription", () => {
 
 // ── Phase2c 节点控制（D3）──
 describe("phase2c pipeline mapping", () => {
-  it("derives RPG target_structure with node-count control", () => {
+  /**
+   * 节点预算不分品类。
+   *
+   * 这一组曾按"管线家族"分两套断言（rpg 要 tpl-rpg + 层级预算，vn 要 tpl-vn-v2 + 开放幕数）。
+   * 幕那一侧的读取者已随 tpl-vn-v2 封存，而 `pipelineTemplate` / `topLevelMapping` 两个字段
+   * 从来没有运行时读取者 —— 于是那些断言验的是"算出来的值等于预期"，而那个值没人用。
+   */
+  it("derives a node budget whose three layers cover the target node count", () => {
     const plan = mapGameUnitToPipeline(
       { index: 1, unitRange: { start: "u1", end: "u3" }, boundary: "soft", targetNodeCount: 40 },
-      "series",
-      { family: "rpg", defaultComplexity: 3 },
+      { defaultComplexity: 3 },
     );
-    expect(plan.pipelineTemplate).toBe("tpl-rpg");
-    expect(plan.targetStructure?.plot_length).toBe(40);
-    expect(plan.topLevelMapping).toBe("rpg-L0");
+    // 契约是三层乘积覆盖目标节点数，不是某个字段等于它。
+    const b = plan.nodeBudgetOverride!;
+    expect(b.l0_nodes * b.l1_per_parent * b.l2_per_parent).toBeGreaterThanOrEqual(40);
   });
 
-  it("vn 家族映射到 tpl-vn-v2 且开放幕数随节点数派生", () => {
-    const plan = mapGameUnitToPipeline(
-      { index: 1, unitRange: { start: "u1", end: "u3" }, boundary: "soft", targetNodeCount: 45 },
-      "single",
-      { family: "vn", defaultComplexity: 3 },
-    );
-    expect(plan.pipelineTemplate).toBe("tpl-vn-v2");
-    expect(plan.vnActCount).toBeGreaterThanOrEqual(2);
+  it("gives the same shape of budget regardless of the target genre", () => {
+    // 影游与 JRPG 的差别在节点怎么连（叙事结构轴的事），不在每层开几个节点。
+    const mk = (targetNodeCount: number) =>
+      mapGameUnitToPipeline(
+        { index: 1, unitRange: { start: "u1", end: "u3" }, boundary: "soft", targetNodeCount },
+        { defaultComplexity: 3 },
+      );
+    expect(mk(45).nodeBudgetOverride).toBeTruthy();
+    expect(mk(45)).toEqual(mk(45));
   });
 
-  // §4.6 接缝：family→代表品类，使生成模板真正被 pipeline_family 驱动（而非恒退化 rpg-jrpg）。
-  it("representativeGenreForFamily(vn) 解析到 tpl-vn-v2 品类；rpg 不强制", () => {
-    const vnGenre = representativeGenreForFamily("vn");
-    expect(vnGenre).toBe("adv-interactive");
-    // 该代表品类必须真实存在且映射到 vn-v2 模板，否则生成仍会跑错链
-    expect(findGenreByCode(vnGenre!)?.pipelineTemplate).toBe("tpl-vn-v2");
-    // rpg 家族保持原检测/默认行为，不强制品类（返回 undefined）
-    expect(representativeGenreForFamily("rpg")).toBeUndefined();
-  });
-
-  // 生成期 PipelineConfig 装配：直接验证 defaultGenerationRunner 真把 family 接进 genreCode，
+  // 生成期 PipelineConfig 装配：直接验证 defaultGenerationRunner 真把品类接进 genreCode，
   // 闭合「真实生成 runner 未被 e2e 覆盖（被 mock）」的置信度缺口。
-  it("buildGenerationPipelineConfig：vn 家族注入 adv-interactive→tpl-vn-v2，且不覆盖显式 genreCode", () => {
-    const vnCfg = buildGenerationPipelineConfig({}, "vn");
-    expect(vnCfg.genreCode).toBe("adv-interactive");
-    expect(findGenreByCode(vnCfg.genreCode!)?.pipelineTemplate).toBe("tpl-vn-v2");
+  it("buildGenerationPipelineConfig：未指定品类时给缺省品类，显式品类不被覆盖", () => {
+    const cfg = buildGenerationPipelineConfig({});
+    expect(cfg.genreCode).toBe(DEFAULT_ADAPTATION_GENRE);
+    // 缺省品类必须真实存在，否则下游模板解析会落空。
+    expect(findGenreByCode(cfg.genreCode!)).toBeTruthy();
 
-    // rpg 家族不强制品类（沿用既有检测/默认）
-    const rpgCfg = buildGenerationPipelineConfig({}, "rpg");
-    expect(rpgCfg.genreCode).toBeUndefined();
-
-    // 调用方显式指定品类时不被覆盖
-    const explicit = buildGenerationPipelineConfig(
-      { pipelineConfig: { genreCode: "rpg-crpg" } },
-      "vn",
-    );
-    expect(explicit.genreCode).toBe("rpg-crpg");
+    // 调用方显式指定品类时不被覆盖 —— 117 个品类都是平等的目标形态。
+    expect(
+      buildGenerationPipelineConfig({ pipelineConfig: { genreCode: "rpg-crpg" } }).genreCode,
+    ).toBe("rpg-crpg");
 
     // tier / mode 覆盖优先级：generationMode > pipelineConfig.mode
-    const moded = buildGenerationPipelineConfig(
-      { pipelineConfig: { mode: "design_auto" }, generationMode: "narrative_auto", tier: "tier2" },
-      "rpg",
-    );
+    const moded = buildGenerationPipelineConfig({
+      pipelineConfig: { mode: "design_auto" },
+      generationMode: "narrative_auto",
+      tier: "tier2",
+    });
     expect(moded.mode).toBe("narrative_auto");
     expect(moded.tier).toBe("tier2");
   });
@@ -375,22 +409,20 @@ describe("rewrite impact", () => {
 
 // ── 编排器：scoped DNA + 账本 + Phase2c 注入种子 ──
 describe("orchestrator wiring (D1d/D3/D8)", () => {
-  it("seeds scoped narrativeIpDna + ledger + pipeline plan + target_structure on seed ctx", async () => {
+  it("seeds scoped narrativeIpDna + ledger + pipeline plan + node budget on seed ctx", async () => {
     const result = await runIpDnaPipeline({
       files: [{ fileName: "s.md", data: SAMPLE_TEXT, fileType: "text/markdown" }],
       title: "接线验证",
       cwd: TMP,
       runGeneration: false,
-      pipelineFamily: "rpg",
     });
     const gu = result.gameUnits[0];
     // D1d：scoped DNA 注入种子
     expect(gu.seedContext.narrativeIpDna?.scoped_to_game_unit).toBe(gu.index);
     // D10：账本挂在种子 ctx
     expect((gu.seedContext as Record<string, unknown>)._long_memory_ledger).toBeTruthy();
-    // D3：RPG target_structure 写入 global_control_params
-    expect(gu.seedContext.global_control_params?.target_structure?.plot_length).toBeGreaterThan(0);
-    expect(gu.pipelinePlan?.pipelineTemplate).toBe("tpl-rpg");
+    // D3：节点预算覆盖写入 global_control_params —— 不分品类，缺省路径也要拿到。
+    expect(gu.seedContext.global_control_params?.node_budget_override?.l0_nodes).toBeGreaterThan(0);
     // D8：中间层（卷/章）节点 template 被递归回填
     const internal = Object.values(result.dna.nodes).find((n) => n.children.length > 0 && n.levelType !== "complete");
     expect(internal?.template).toBeTruthy();

@@ -106,7 +106,7 @@ export function TaskPanel() {
   /** ② 需求输入 / 文件上传：上传型条目的正文是文件，不是那段文字。 */
   const renderInputRow = (entry: (typeof displayHistory)[number]) => {
     const uploads = entry.uploadedFileNames ?? [];
-    const isUpload = uploads.length > 0 || entry.inputType === "works" || entry.kind === "ip-dna";
+    const isUpload = uploads.length > 0 || entry.inputType === "adapted" || entry.kind === "ip-dna";
     const text = isUpload
       ? uploads.length > 0
         ? t("task.row.upload", { n: uploads.length, names: uploads.join("、") })

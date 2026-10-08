@@ -14,6 +14,7 @@ export const STEP_IDS = {
   OUTLINE_BATCH: "outline_batch",
   DETAILED_OUTLINE: "detailed_outline",
   PLOT_GENERATION: "plot_generation",
+  STATE_LEDGER: "state_ledger",
   SCRIPT_GENERATION: "script_generation",
   /**
    * 场景席按环节方向拆成两步（2026-08）：SCENE_PLAN 是前向规划（从世界观推演清单），
@@ -513,6 +514,7 @@ export const STEP_OUTPUT_FIELDS: Record<string, string[]> = {
   [S.DETAILED_OUTLINE]:        ["detailed_outlines_generated", "l2_validation"],
   // PLOT_GENERATION 内含 L3 验证
   [S.PLOT_GENERATION]:         ["plots_generated", "l3_validation"],
+  [S.STATE_LEDGER]:            ["world_state_ledger"],
   [S.SCRIPT_GENERATION]:       ["jrpg_script"],
   [S.QUEST_GENERATION]:        ["quest_graph"],
   [S.SCENE_PLAN]:              ["scene_map"],

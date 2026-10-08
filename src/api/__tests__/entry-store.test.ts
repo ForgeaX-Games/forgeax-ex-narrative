@@ -45,7 +45,7 @@ describe("entry-store: output/<key>/_entry.json 持久化", () => {
 
   it("writeEntry 首次写入创建目录并落 _entry.json", () => {
     const key = "2026-07-02_10-00-00-000";
-    const cfg = writeEntry(tmp, key, { inputType: "text", userInput: "hello", routeGroup: "planning" });
+    const cfg = writeEntry(tmp, key, { inputType: "authored", userInput: "hello", routeGroup: "planning" });
     expect(cfg.key).toBe(key);
     expect(cfg.userInput).toBe("hello");
     expect(cfg.createdAt).toBeTruthy();

@@ -32,7 +32,7 @@ import type { LLMClient } from "../runtime/llm-client.js";
 import "../core/step-registrations.js";
 
 /**
- * 质检席（2.3.15）与打磨四席（2.3.16–2.3.19）。
+ * 质检席（2.5.16）与打磨四席（2.5.17–2.5.20）。
  *
  * 这五席的失败模式都不是抛错，而是**看着跑过了**：
  *   - 内容检查报了一堆 error 却把 verdict 写成 pass，前端红点不亮；
@@ -83,7 +83,7 @@ function stubLlm(reply: unknown | ((user: string) => unknown)): LLMClient & {
   return llm as unknown as LLMClient & { systems: string[]; users: string[] };
 }
 
-describe("内容检查席（2.3.15）", () => {
+describe("内容检查席（2.5.16）", () => {
   it("已转 active 且绑定实现，契约自检通过", () => {
     const seat = getSeat("content_check")!;
     expect(seat.status).toBe("active");
@@ -199,15 +199,15 @@ describe("内容检查席（2.3.15）", () => {
   });
 });
 
-describe("打磨四席（2.3.16–2.3.19）", () => {
+describe("打磨四席（2.5.17–2.5.20）", () => {
   /**
-   * 玩法适配（2.3.19）已按产品决定改 planned：上下游口径未定，暂不接线。
-   * 它的实现 `playability_adapt` 仍在，但归到席位的 alsoOwns 而非 bindings——
-   * 于是解析不到、不进任何管线，只保住「每个 step 都有主人」这条不变量。
+   * 空了。玩法适配（2.5.20）曾是唯一一席 planned —— 当时的理由是"上下游口径未定"，
+   * 而 v4 主表把它的职责定死成「让选项变得有意义、分支能真正推进剧情」，上游就是结构席。
+   * 四席现在一律 active，各绑一个实现。
    */
-  const PLANNED_POLISH_SEATS = ["playability"];
+  const PLANNED_POLISH_SEATS: string[] = [];
 
-  it("三席 active 各绑一个实现，玩法适配席 planned 且不解析", () => {
+  it("四席各 active 且各绑一个实现", () => {
     for (const spec of POLISH_SEAT_SPECS) {
       const seat = getSeat(spec.seatId)!;
       if (PLANNED_POLISH_SEATS.includes(spec.seatId)) {

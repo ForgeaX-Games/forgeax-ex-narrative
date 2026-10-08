@@ -187,7 +187,7 @@ describe("#6 story_title 无策划路径", () => {
     expect(ctx.story_title).toBe("既定书名");
   });
 
-  // §4.6：IP DNA 改编计划预注入的 complexity 视为权威，preference 分析不得覆盖（与 target_structure 一致）。
+  // §4.6：IP DNA 改编计划预注入的 complexity 视为权威，preference 分析不得覆盖（与 node_budget_override 一致）。
   it("seeded 时改编计划 complexity 权威，不被 LLM 读数覆盖", async () => {
     // LLM 给出 complexity=2，但 seeded ctx 预注入 complexity=4 应胜出
     const ctx = {

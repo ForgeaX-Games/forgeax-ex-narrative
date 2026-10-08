@@ -28,6 +28,7 @@ import {
 import { useSecondaryPipelineStreams } from "../../hooks/useSecondaryPipelineStreams";
 import type { HistoryEntry, GenreCategoryGroup } from "../../hooks/useNarrativeStream";
 import { useNarrativeStore, type StepState } from "../../store/narrativeStore";
+import { readStructureVote } from "../../lib/structureVote";
 import { tryRestoreFromStorage } from "../../store/narrativeStore";
 import type { TierId, ModeId } from "../../types";
 import { STEP_CTX_FIELD } from "../../types";
@@ -128,12 +129,14 @@ export function NarrativeRuntimeProvider({ children }: { children: ReactNode }) 
   const storeStartResume = useNarrativeStore((s) => s.startResume);
   const storeLoadEntry = useNarrativeStore((s) => s.loadEntry);
   const setPreviewOrder = useNarrativeStore((s) => s.setPreviewOrder);
+  const setStructureVote = useNarrativeStore((s) => s.setStructureVote);
   const setRoutingConfigured = useNarrativeStore((s) => s.setRoutingConfigured);
   const beginDraftEntry = useNarrativeStore((s) => s.beginDraftEntry);
   const inputConfirmed = useNarrativeStore((s) => s.inputConfirmed);
 
   const { routeGroup, tierChoice, narrativeRoute, genreCode, complexity, complexityTouched } = routing;
   const { userInput, tagSelections, tagCustomTexts, uploadedFiles } = input;
+  const inputTab = useNarrativeStore((s) => s.inputTab);
 
   const scriptFile = useMemo(() => pickScriptFile(uploadedFiles), [uploadedFiles]);
   const isHeavyUpload = isHeavyUploadSet(uploadedFiles);
@@ -304,6 +307,12 @@ export function NarrativeRuntimeProvider({ children }: { children: ReactNode }) 
       mode: modeArg,
       storyType: routing.storyType,
       storyTheme: routing.storyTheme,
+      // 用户覆盖过结构就带上，让预演算出的结构与实跑一致；null = 跟随投票。
+      narrativeStructure: routing.narrativeStructure,
+      // 标签无条件带上：后端据标签兜底推类型/题材两轴，不带这份，预览算出的结构会与
+      // 实跑（实跑从 _entry.json 读到标签）不一致。从前只在标签档带，于是用户既写需求
+      // 又勾标签时，预览与实跑看到的输入不是同一份。
+      tags: { selections: tagSelections, customTexts: tagCustomTexts },
       // tpl-vn-v2 E1/E2 互斥由后端同一实现裁决（vn-v2-e2.ts）。
       hasUploadedScript: !!(scriptFile?.content || scriptFile?.contentBase64),
     })
@@ -312,30 +321,27 @@ export function NarrativeRuntimeProvider({ children }: { children: ReactNode }) 
         const agents = res.pipeline?.agents ?? res.pipelines[0]?.agents;
         setPreviewOrder(agents?.length ? agents.map((a) => a.agentId) : null, previewIsAuto);
         previewPipelineIdRef.current = res.pipeline?.pipelineId ?? res.pipelines[0]?.pipelineId;
+        // 第四轴「叙事结构」的结论与依据也在这份预演里。它不出面让用户选，但必须
+        // 出面让用户看见 —— 三轴换一换就换出另一种结构，看不到就只能盲信。
+        setStructureVote(readStructureVote(res.pipeline?.config ?? res.pipelines[0]?.config));
       })
       .catch(() => {
-        if (!cancelled) setPreviewOrder(null, previewIsAuto);
+        if (cancelled) return;
+        setPreviewOrder(null, previewIsAuto);
+        setStructureVote(null);
       });
     return () => { cancelled = true; };
   }, [
     isHeavyUpload, routeGroup, genreCode, tierChoice, narrativeRoute,
     complexity, showComplexity,
-    routing.storyType, routing.storyTheme, previewIsAuto, scriptFile, setPreviewOrder,
+    routing.storyType, routing.storyTheme, routing.narrativeStructure,
+    inputTab, tagSelections, tagCustomTexts,
+    previewIsAuto, scriptFile, setPreviewOrder, setStructureVote,
   ]);
 
-  // 标签 → 输入框自动同步（仅当 inputTab === "tags" 时生效，避免覆盖手动输入）。
-  const inputTab = useNarrativeStore((s) => s.inputTab);
-  useEffect(() => {
-    if (inputTab !== "tags") return;
-    const parts: string[] = [];
-    for (const dim of TAG_DIMENSIONS) {
-      const sel = tagSelections[dim.key];
-      const custom = tagCustomTexts[dim.key]?.trim();
-      if (sel) parts.push(`${t(dim.nameKey)}：${sel}`);
-      if (custom) parts.push(`${t(dim.nameKey)}：${custom}`);
-    }
-    setInput({ userInput: parts.join("；") });
-  }, [inputTab, tagSelections, tagCustomTexts, setInput, t]);
+  // 标签不再回写输入框。那个同步是互斥时代的产物：注释写着"避免覆盖手动输入"，实际
+  // 只要在标签档就无条件覆盖 `userInput`，用户手写的需求当场没了。并存之后标签自有住所
+  // （`tagSelections`），折成文本在提交时一次做（`composeAuthoredInput`）。
 
   // IP DNA 异步任务轮询：每 1.5s 拉一次进度，完成/失败即停；完成后刷新历史列表。
   useEffect(() => {
@@ -731,10 +737,11 @@ export function NarrativeRuntimeProvider({ children }: { children: ReactNode }) 
           // 三轴回填：旧条目没这几个字段，落 null 让顶栏显示"未选"而不是留着上一条的残值。
           storyType: cfg.storyType ?? null,
           storyTheme: cfg.storyTheme ?? null,
+          // 条目里存的是用户覆盖（不是上次的推导结论），所以直接回填。
+          narrativeStructure: cfg.narrativeStructure ?? null,
         });
-        if (cfg.inputType) {
-          useNarrativeStore.getState().setInputTab(cfg.inputType === "works" ? "file" : cfg.inputType);
-        }
+        // 服务端读盘已归一成两值（`toIntakeSource`），这里直接回填。
+        if (cfg.inputType) useNarrativeStore.getState().setInputTab(cfg.inputType);
         useNarrativeStore.getState().setActiveConfig({
           storyType: cfg.storyType ?? null,
           storyTheme: cfg.storyTheme ?? null,

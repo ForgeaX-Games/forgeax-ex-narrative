@@ -91,7 +91,7 @@ describe("起跑闸门契约：runPolicy 与 requiredInputs 互相印证", () =>
     expect(problems, "runPolicy 与 status 不配套").toEqual([]);
   });
 
-  it("按需求分类落表：十席独立 / 九席依赖 / 一席 planned", () => {
+  it("按需求分类落表：十席独立 / 九席依赖 / 三席 planned", () => {
     const byPolicy = (policy: string): string[] =>
       ASSISTANT_SEATS.filter((s) => s.runPolicy === policy).map((s) => s.id).sort();
 
@@ -100,11 +100,16 @@ describe("起跑闸门契约：runPolicy 与 requiredInputs 互相印证", () =>
       "narrative_card", "outline", "req_list", "scene_list", "worldview",
     ]);
     expect(byPolicy("requires-upstream")).toEqual([
-      "content_check", "deai", "plot", "plot_polish", "plot_refine",
+      "content_check", "deai", "playability", "plot", "plot_refine",
       "quest", "storyboard", "structure", "structure_check",
     ]);
-    expect(ASSISTANT_SEATS.filter((s) => s.status === "planned").map((s) => s.id))
-      .toEqual(["playability"]);
+    // 三席契约已立、实现待建（v4 §2.5.0 / §2.5.18 / §2.5.21）。按 planned 的规矩它们
+    // 不声明 runPolicy 与上下游，所以不出现在上面两张表里 —— 还没有实现可谈起跑。
+    expect(ASSISTANT_SEATS.filter((s) => s.status === "planned").map((s) => s.id)).toEqual([
+      "entry_config",
+      "structure_optimize",
+      "narration",
+    ]);
   });
 });
 

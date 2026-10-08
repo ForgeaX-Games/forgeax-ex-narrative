@@ -55,6 +55,9 @@ describe("buildRunManifest", () => {
       "outline_batch",
       "detailed_outline",
       "plot_generation",
+      // 情节席的派生子步：把各节点声明的状态变更折成一本账，下游要"走到这里时世界
+      // 什么样"就不必重读全树。分批生成时每批只看得见自己那几个节点，所以它排在后面。
+      "state_ledger",
       "quest_generation",
       // 质检两席：结构检查（图上的确定性判据）+ 内容检查（八项内容判据），
       // 内容检查席带场景取证子步（从剧情倒推场景，与前向清单对账）。

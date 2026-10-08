@@ -52,7 +52,6 @@ export const SKILL_TARGET_SEATS: readonly { seatId: string; name: string; asks: 
   { seatId: "plot", name: "故事情节助手", asks: "节点内容怎么写：场面怎么起、转折怎么落、留白留在哪" },
   { seatId: "quest", name: "任务助手", asks: "把叙事转成任务时保住什么：动机的来源、完成条件的叙事含义" },
   { seatId: "storyboard", name: "分镜助手", asks: "画面语言：视角、景别节奏、情绪的视觉落点" },
-  { seatId: "plot_polish", name: "情节润色助手", asks: "表达层的手法：情感渲染靠什么、节奏怎么摆" },
   { seatId: "deai", name: "去 AI 味助手", asks: "这位作者的笔迹特征——哪些写法一眼能认出是他，而不是通稿" },
 ];
 

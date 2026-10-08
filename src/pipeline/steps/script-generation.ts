@@ -14,6 +14,11 @@ import type { NarrativeContext, PlotNode, ScriptChapter, JrpgScript } from "../.
 import type { LLMClient } from "../runtime/llm-client.js";
 import { extractJSON } from "../runtime/llm-client.js";
 import { validateTripleConstraints } from "../../utils/constraint-validator.js";
+import {
+  computeWorldSnapshot,
+  plotsToLedgerNodes,
+  renderWorldSnapshot,
+} from "../graph/state-ledger.js";
 import { buildDesignContextSnippet, appendUserInstructions, userInstructionsBlock } from "./design-context-helper.js";
 import { composeSystemPrompt, composeUserPrompt, IP_DNA_SLOT_BLOCK, type PromptComposer } from "../runtime/prompt-composer.js";
 import { CAMERA_LANGUAGE } from "../prompt/narrative-craft.js";
@@ -121,10 +126,7 @@ function scriptChunkWave(ctx: NarrativeContext): { slidingSummary?: string; cons
 export const SCRIPT_GENERATION_COMPOSER: PromptComposer = {
   stepId: "script_generation",
   skillSlots: ["style_guide", "examples", "constraints"],
-  systemBlockOrder: [
-    "base", "ip_dna", "craft", "style_guide", "examples", "constraints",
-    "cot", "priority_chain", "mode_source", "concept_mapping", "self_check", "output",
-  ],
+  systemBlockOrder: ["base", "style_guide", "ip_dna", "craft", "constraints", "cot", "priority_chain", "mode_source", "examples", "concept_mapping", "self_check", "output"],
   userBlockOrder: ["main", "user_instructions"],
   blocks: {
     cot: `## 机制与流程
@@ -233,6 +235,7 @@ ${JSON.stringify(ctx.global_control_params ?? {})}
 
 ## 世界观设定
 ${JSON.stringify(ctx.worldview_structure ?? {}, null, 2)}
+${buildWorldSnapshotSection(ctx, plot)}
 ${slidingWindowSummary ? `\n## 前一节点实际生成摘要（保持叙事连贯）\n${slidingWindowSummary}` : ""}
 
 ## 进度
@@ -245,6 +248,24 @@ ${buildDesignContextSnippet(ctx)}`;
     prompt += `\n\n## ⚠ 约束修正要求（上次生成未通过三重约束验证，请针对性修正）\n${constraintFeedback}`;
   }
   return prompt;
+}
+
+/**
+ * 这一节点此刻的世界快照。
+ *
+ * 剧本层最容易吃书的地方在这里：它逐节点改写，手上只有本节点的情节和一份**开场时**的
+ * 角色档案。一件第 3 节点就碎掉的道具、一个第 5 节点已经换了装的角色，到第 12 节点还
+ * 会被照着档案写回原样。快照按这一节点的来路把前面的变更折起来，答的正是"此刻"。
+ *
+ * 账本缺席时返回空串而不是占位：这一步不该因为可选的上游没跑就少块必需的段落，
+ * 而一句"（无账本）"对模型只是噪声。
+ */
+function buildWorldSnapshotSection(ctx: NarrativeContext, plot: PlotNode): string {
+  const ledger = ctx.world_state_ledger;
+  const plots = ctx.plots_generated?.plots;
+  if (!ledger || !plots?.length) return "";
+  const snapshot = computeWorldSnapshot(ledger, plot.node_id, plotsToLedgerNodes(plots));
+  return `\n${renderWorldSnapshot(snapshot)}\n`;
 }
 
 function normalizeChapter(raw: Record<string, unknown>, plot: PlotNode, index: number): ScriptChapter {

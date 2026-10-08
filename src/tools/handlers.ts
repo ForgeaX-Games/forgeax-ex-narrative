@@ -20,6 +20,8 @@
 
 import { readFile } from 'node:fs/promises';
 import { isAbsolute, resolve, relative, extname, basename } from 'node:path';
+// type-only：编译后消失，不给工具层引入 entry-store 的运行时依赖。
+import type { IntakeSource } from '../api/entry-store.js';
 
 interface ToolCtx {
   caller: { kind: string; id?: string };
@@ -187,7 +189,7 @@ interface StartPipelineArgs {
    * 先建条目再把键传进来。
    */
   entryKey?: string;
-  /** 勾选启用的默认关席位（打磨三席：deai / plot_refine / plot_polish）。 */
+  /** 勾选启用的默认关席位（打磨三席：playability / deai / plot_refine）。 */
   activateSeats?: string[];
   /**
    * 自定义专属创作团队 id。
@@ -211,7 +213,7 @@ interface TeamIdArg {
  */
 interface CreateEntryArgs {
   key: string;
-  inputType?: "text" | "tags" | "works";
+  inputType?: IntakeSource;
   userInput?: string;
   tags?: { selections?: Record<string, string>; customTexts?: Record<string, string> };
   routeGroup?: "planning" | "narrative";
@@ -364,10 +366,9 @@ interface IpDnaStartArgs {
   complexity?: number;
   runGeneration?: boolean;
   maxGameUnits?: number;
-  pipelineFamily?: "rpg" | "vn";
   tier?: string;
   generationMode?: string;
-  /** ROUTING 透传（§5.1/§L）：路由组 + 品类编码，决定下游 vn/rpg 生成管线。 */
+  /** ROUTING 透传（§5.1/§L）：路由组 + 品类编码，决定下游生成管线的品类。 */
   routeGroup?: "planning" | "narrative";
   genreCode?: string;
   model?: string;
@@ -410,7 +411,6 @@ interface IpDnaConfirmUnitsArgs {
 /** 阶段门 提取/生成（extract=仅 IP DNA；generate=提取+下游生成自动串跑）。 */
 interface IpDnaExtractGenerateArgs {
   runId: string;
-  pipelineFamily?: "rpg" | "vn";
   tier?: string;
   generationMode?: string;
   complexity?: number;
@@ -772,7 +772,6 @@ export const tools = {
         complexity: args.complexity,
         run_generation: args.runGeneration,
         max_game_units: args.maxGameUnits,
-        pipeline_family: args.pipelineFamily,
         tier: args.tier,
         generation_mode: args.generationMode,
         route_group: args.routeGroup,
@@ -843,7 +842,6 @@ export const tools = {
     return await apiFetch(`${base}/ip-dna/${encodeURIComponent(args.runId)}/extract`, {
       method: "POST",
       body: JSON.stringify({
-        pipeline_family: args.pipelineFamily,
         tier: args.tier,
         generation_mode: args.generationMode,
         complexity: args.complexity,
@@ -860,7 +858,6 @@ export const tools = {
     return await apiFetch(`${base}/ip-dna/${encodeURIComponent(args.runId)}/generate`, {
       method: "POST",
       body: JSON.stringify({
-        pipeline_family: args.pipelineFamily,
         tier: args.tier,
         generation_mode: args.generationMode,
         complexity: args.complexity,

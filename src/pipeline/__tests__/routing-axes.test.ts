@@ -28,10 +28,19 @@ describe("路由换轴：叙事结构综合", () => {
     const m = buildRunManifest({
       config: { genreCode: "rpg-jrpg", storyType: "drama", storyTheme: "workplace" },
     });
-    expect(m.config.narrativeStructure).toBe("linear");
+    expect(m.config.narrativeStructure).toBeTruthy();
     expect(m.config.structureSource).toBe("vote");
     expect(m.config.storyType).toBe("drama");
     expect(m.config.storyTheme).toBe("workplace");
+  });
+
+  // 结构是三轴比较出来的，不是品类的只读派生属性：另两轴必须有改写结论的能力。
+  it("类型与题材真的参与投票，不是只被记录下来", () => {
+    const genreOnly = buildRunManifest({ config: { genreCode: "rpg-jrpg" } });
+    const allThree = buildRunManifest({
+      config: { genreCode: "rpg-jrpg", storyType: "drama", storyTheme: "workplace" },
+    });
+    expect(allThree.config.narrativeStructure).not.toBe(genreOnly.config.narrativeStructure);
   });
 
   it("开放世界品类推出多线交织", () => {
@@ -65,7 +74,8 @@ describe("历史条目兼容", () => {
     expect(m.complete).toBe(true);
   });
 
-  it("旧条目补选三轴后管线步序不变，只多出结构结论", () => {
+  // 步序由 tier/mode 决定，结构由三轴决定：补选三轴会改写结构结论，但不该动步序。
+  it("旧条目补选三轴只改写结构结论，管线步序不变", () => {
     const before = buildRunManifest({ config: { genreCode: "rpg-jrpg", mode: "narrative_auto" } });
     const after = buildRunManifest({
       config: {
@@ -76,6 +86,6 @@ describe("历史条目兼容", () => {
       },
     });
     expect(after.agents.map((a) => a.agentId)).toEqual(before.agents.map((a) => a.agentId));
-    expect(after.config.narrativeStructure).toBe(before.config.narrativeStructure);
+    expect(after.config.narrativeStructure).not.toBe(before.config.narrativeStructure);
   });
 });

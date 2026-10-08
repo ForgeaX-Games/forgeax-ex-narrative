@@ -1,5 +1,5 @@
 /**
- * scene-plan.ts —— 场景列表席（2.3.6）的前向规划实现
+ * scene-plan.ts —— 场景列表席（2.5.7）的前向规划实现
  *
  * 这一席的语义是 **create**：从世界观推演"这个世界该有哪些地方"，产出层级化场景树。
  * 它跑在剧情之前，因此手上只有设定层材料，不可能、也不该等剧情写完。
@@ -112,10 +112,7 @@ export const SCENE_PLAN_COMPOSER: PromptComposer = {
     ]),
     output: SCENE_PLAN_OUTPUT,
   },
-  systemBlockOrder: [
-    "base", "ip_dna", "style_guide", "constraints",
-    "cot", "priority_chain", "ip_source", "concept_mapping", "self_check", "output",
-  ],
+  systemBlockOrder: ["base", "style_guide", "ip_dna", "constraints", "cot", "priority_chain", "ip_source", "concept_mapping", "self_check", "output"],
   userBlockOrder: [],
   skillSlots: ["style_guide", "constraints"],
 };
@@ -128,10 +125,50 @@ interface PlannedScene {
   description?: unknown;
 }
 
-function buildScenePlanPrompt(ctx: NarrativeContext): string {
+/**
+ * 场景树按层分两轮产出。
+ *
+ * 一次出整棵树，是把六层的判断压进一次调用：模型要同时决定世界有哪几个区域、每个
+ * 区域下有什么地域、哪栋楼值得进去、屋里摆什么。注意力摊薄的结果是越往下越敷衍，
+ * 而且层级容易接错（提示词里"室内不能是世界的直接子节点"这条自检，就是在防它）。
+ *
+ * 分两轮之后，下层那一轮手上拿的是**已经定下来的**上层：它不再猜"这个世界大概有
+ * 什么地方"，而是看着具体的地域决定哪里该挖进去。这正是席位声明的「按层分轮」。
+ *
+ * 只分两轮而不是六轮：层与层之间要的是"上层已定"，不是"每层单独一轮"。0-2 层是
+ * 同一个判断（世界的地理骨架），3-5 层是另一个（哪里值得进去、进去有什么）。
+ */
+type ScenePlanRound = "upper" | "lower";
+
+const ROUND_SCOPE: Readonly<Record<ScenePlanRound, string>> = {
+  upper: `## 本轮范围：第 0-2 层（世界 / 区域 / 地域）
+
+只输出这三层，不要往下展开地标、室内与物品——它们由下一轮负责。
+把这个世界的地理骨架定准：区域 2-5 个，每个区域下地域 2-4 个。`,
+  lower: `## 本轮范围：第 3-5 层（地标点 / 室内 / 物品）
+
+上层已经定下来了（见下方「已定的上层场景树」），不要重出、不要改名、不要新增区域
+或地域。你只做一件事：挑出有戏的地域，往里展开地标点，再对值得进去的地标
+展开室内与物品。
+
+parent 必须是上层树里已有的 name（第 3 层）或本轮输出的 name（第 4-5 层）。
+不必对每个地域都挖下去——没有交互价值的地方留在第 2 层就好，挖了反而是噪声。`,
+};
+
+function buildScenePlanPrompt(
+  ctx: NarrativeContext,
+  round: ScenePlanRound,
+  upper?: readonly PlannedScene[],
+): string {
   const worldview = ctx.worldview_structure
     ? JSON.stringify(ctx.worldview_structure, null, 2).slice(0, 6000)
     : "（无——只依据下面的用户需求推演，不要假装读到过世界观）";
+
+  const upperTree = upper?.length
+    ? `\n## 已定的上层场景树（不可改动）\n${upper
+        .map((s) => `- [L${s.level ?? 0}] ${s.name}${s.parent ? ` ← ${s.parent}` : ""}`)
+        .join("\n")}\n`
+    : "";
 
   return `## 世界观设定
 ${worldview}
@@ -143,32 +180,55 @@ ${worldview}
 ## 用户原始需求
 ${ctx.user_input ?? "（无）"}
 ${buildDesignContextSnippet(ctx)}
-请规划该世界的层级化场景树。`;
+${ROUND_SCOPE[round]}
+${upperTree}
+请按本轮范围输出场景。`;
 }
 
 /**
- * 前向场景规划：一次 LLM 调用出树，随后交给确定性聚合器补全 UID 与结构 MD。
+ * 前向场景规划：按层分两轮产出（见 `buildScenePlanPrompt`），随后交给确定性聚合器
+ * 补全 UID 与结构 MD。
  *
  * 聚合器是从旧实现 Phase3 原样吸收的——去重、父引用修复、层级推断、深度裁剪、
  * UID 分配这些都是纯算法，与"场景从哪来"无关，因此前向后向都该共用同一份。
  */
-export async function scenePlan(ctx: NarrativeContext, llm: LLMClient): Promise<void> {
-  const worldName = ctx.core_settings?.world_name ?? "游戏世界";
-
+/**
+ * 跑一轮场景规划。
+ *
+ * 下层那一轮不校验"非空"：一个世界完全可以没有任何值得进去的室内（纯野外的公路片
+ * 就是），那时空数组是正确答案。上层空了才是真的没规划出东西。
+ */
+async function runScenePlanRound(
+  ctx: NarrativeContext,
+  llm: LLMClient,
+  round: ScenePlanRound,
+  upper?: readonly PlannedScene[],
+): Promise<PlannedScene[]> {
   const raw = await llm.callWithRetry(
     composeSystemPrompt(SCENE_PLAN_COMPOSER, ctx),
-    appendUserInstructions(buildScenePlanPrompt(ctx), ctx),
+    appendUserInstructions(buildScenePlanPrompt(ctx, round, upper), ctx),
     { responseFormat: "json" },
     (r) => {
       const p = extractJSON<Record<string, unknown>>(r);
-      if (!Array.isArray(p.scenes) || p.scenes.length === 0) {
-        throw new Error("scenes 必须是非空数组");
+      if (!Array.isArray(p.scenes)) throw new Error("scenes 必须是数组");
+      if (round === "upper" && p.scenes.length === 0) {
+        throw new Error("上层场景（世界/区域/地域）不能为空");
       }
     },
   );
-
   const parsed = extractJSON<{ scenes: PlannedScene[] }>(raw);
-  const planned = (parsed.scenes ?? []).filter((s) => !!s.name);
+  return (parsed.scenes ?? []).filter((s) => !!s.name);
+}
+
+export async function scenePlan(ctx: NarrativeContext, llm: LLMClient): Promise<void> {
+  const worldName = ctx.core_settings?.world_name ?? "游戏世界";
+
+  const upper = await runScenePlanRound(ctx, llm, "upper");
+  const lower = await runScenePlanRound(ctx, llm, "lower", upper);
+
+  // 两轮的结果直接接在一起交给聚合器：去重、父引用修复、层级推断本来就是它的活，
+  // 两轮之间难免有重出或接错的节点，那正是它该管的，不必在这里先修一遍。
+  const planned = [...upper, ...lower];
 
   const { scenes, structureMd } = aggregateScenes(
     worldName,
@@ -193,5 +253,8 @@ export async function scenePlan(ctx: NarrativeContext, llm: LLMClient): Promise<
     ((stepId: string, nodeId: string, data: unknown) => void) | undefined;
   saveNode?.("scene_plan", "scene_tree", scenes);
 
-  console.log(`[ScenePlan] 前向规划完成，${scenes.length} 个场景`);
+  console.log(
+    `[ScenePlan] 前向规划完成，${scenes.length} 个场景`
+      + `（上层 ${upper.length} + 下层 ${lower.length}）`,
+  );
 }

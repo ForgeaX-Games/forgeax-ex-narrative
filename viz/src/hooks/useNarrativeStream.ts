@@ -220,6 +220,8 @@ export async function planPipelines(body: {
   storyType?: string | null;
   storyTheme?: string | null;
   narrativeStructure?: string | null;
+  /** 标签选择；后端在类型/题材为空时据它兜底推导两轴，预览才与实跑同口径。 */
+  tags?: { selections?: Record<string, string>; customTexts?: Record<string, string> };
   complexity?: number;
   routeGroup?: "planning" | "narrative";
   locale?: string;
@@ -286,6 +288,8 @@ export async function startEntryPipelines(body: {
     /** 三轴：类型/题材由需求入口给出，结构由后端推导（故此处不传）。 */
     storyType?: string | null;
     storyTheme?: string | null;
+    /** 第四轴的用户覆盖；null = 跟随三轴投票。传结论会把投票短路。 */
+    narrativeStructure?: string | null;
     complexity?: number;
     routeGroup?: "planning" | "narrative";
     autoDetect?: boolean;
@@ -645,10 +649,9 @@ export async function ipDnaConfirmUnits(
 /** ③ 生成 scoped IP DNA（仅提取，run_generation=false）。async=true 走 job。 */
 export async function ipDnaExtract(
   runId: string,
-  opts: { pipelineFamily?: "rpg" | "vn"; tier?: TierId; generationMode?: ModeId; complexity?: number; maxGameUnits?: number; equipOperators?: boolean; model?: string; async?: boolean } = {},
+  opts: { tier?: TierId; generationMode?: ModeId; complexity?: number; maxGameUnits?: number; equipOperators?: boolean; model?: string; async?: boolean } = {},
 ): Promise<IpDnaJobStartResponse | IpDnaJobStatus["result"]> {
   return postJson(`${API_BASE}/api/narrative/ip-dna/${encodeURIComponent(runId)}/extract`, {
-    pipeline_family: opts.pipelineFamily,
     tier: opts.tier,
     generation_mode: opts.generationMode,
     complexity: opts.complexity,
@@ -662,10 +665,9 @@ export async function ipDnaExtract(
 /** 开始生成（§5 步骤4→5）：提取 + 下游生成自动串跑。async=true 走 job。 */
 export async function ipDnaGenerate(
   runId: string,
-  opts: { pipelineFamily?: "rpg" | "vn"; genreCode?: string; tier?: TierId; generationMode?: ModeId; complexity?: number; maxGameUnits?: number; equipOperators?: boolean; model?: string; async?: boolean } = {},
+  opts: { genreCode?: string; tier?: TierId; generationMode?: ModeId; complexity?: number; maxGameUnits?: number; equipOperators?: boolean; model?: string; async?: boolean } = {},
 ): Promise<IpDnaJobStartResponse | IpDnaJobStatus["result"]> {
   return postJson(`${API_BASE}/api/narrative/ip-dna/${encodeURIComponent(runId)}/generate`, {
-    pipeline_family: opts.pipelineFamily,
     genre_code: opts.genreCode,
     tier: opts.tier,
     generation_mode: opts.generationMode,
@@ -798,7 +800,8 @@ export interface HistoryEntry {
  */
 export interface EntryConfig {
   key?: string;
-  inputType?: "text" | "tags" | "works";
+  /** 需求从哪来：两条入口，与服务端 `IntakeSource` 同一套词（读盘处已归一）。 */
+  inputType?: "authored" | "adapted";
   userInput?: string;
   tags?: { selections?: Record<string, string>; customTexts?: Record<string, string> };
   uploadedFileNames?: string[];
@@ -806,9 +809,16 @@ export interface EntryConfig {
   tier?: TierId;
   mode?: ModeId;
   genreCode?: string;
-  /** 三轴路由（PRD v1.4 §3.2.2）；structure 由后端综合后回写，前端一般只读。 */
+  /** 三轴路由（PRD v1.4 §3.2.2）。 */
   storyType?: string;
   storyTheme?: string;
+  /**
+   * 用户对叙事结构的**覆盖**，不是推导结论。
+   *
+   * 结论是三轴的派生值，不落盘：落了会在下一次被当成显式指定读回去短路投票，
+   * 用户改了类型或题材，结构却永远锁在第一次的结论上。某一次跑成什么结构，
+   * 去那次的 manifest.config 读。
+   */
   narrativeStructure?: string;
   complexity?: number;
   locale?: "en" | "zh";

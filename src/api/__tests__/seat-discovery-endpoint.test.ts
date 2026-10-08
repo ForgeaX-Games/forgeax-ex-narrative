@@ -8,6 +8,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { Server } from "node:http";
 import { app } from "../server.js";
+import { ASSISTANT_SEATS } from "../../pipeline/routing/assistant-seats.js";
 
 interface SeatDiscoveryEntry {
   id: string;
@@ -34,11 +35,13 @@ afterAll(async () => {
 });
 
 describe("GET /api/narrative/seats", () => {
-  it("返回二十席，且 req_list / structure 报出各自的 composite 外壳 id", async () => {
+  it("返回全表席位，且 req_list / structure 报出各自的 composite 外壳 id", async () => {
     const res = await fetch(`${baseUrl}/api/narrative/seats`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { seats: SeatDiscoveryEntry[] };
-    expect(body.seats.length).toBe(20);
+    // 不写死数量：这个端点报的是全表，而全表会随主表增减。写死会让"加了一席"与
+    //"端点漏报一席"红成同一个样子，而前者是常事、后者才是缺陷。
+    expect(body.seats.length).toBe(ASSISTANT_SEATS.length);
 
     const byId = new Map(body.seats.map((s) => [s.id, s]));
     expect(byId.get("req_list")?.canRunStandalone).toBe(true);

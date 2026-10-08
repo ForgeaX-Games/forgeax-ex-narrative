@@ -38,6 +38,7 @@ import {
   ASSISTANT_SEATS,
   getSeatForAgent,
   resolveSeatAgents,
+  resolveSeatPrimaryAgents,
   resolveSeatRequiredFields,
   type SeatBinding,
   type SeatRunPolicy,
@@ -100,7 +101,7 @@ export function buildSeatAgentDef(desc: StepDescriptor, seatId: string): AgentDe
         ? "sequence"
         : migration?.wave
           ? "wave"
-          : executableStructureFor(seatId);
+          : executableStructureFor(seatId, desc.id);
   if (
     structureType !== "single-turn"
     && !migration?.chunked
@@ -184,7 +185,7 @@ export function buildSeatAgentDef(desc: StepDescriptor, seatId: string): AgentDe
  */
 export function resolveSeatRunnableAgentId(seatId: string, scope: SeatScope = {}): string | undefined {
   if (hasAgentDef(seatId)) return seatId;
-  const agents = resolveSeatAgents(seatId, scope);
+  const agents = resolveSeatPrimaryAgents(seatId, scope);
   return agents.length === 1 ? agents[0] : undefined;
 }
 
@@ -242,7 +243,10 @@ export function registerSeatAgentDefs(): string[] {
 
   for (const seat of ASSISTANT_SEATS) {
     if (!getSeatSpec(seat.id)) continue;
-    for (const agentId of seat.bindings.flatMap((b) => b.agentIds)) {
+    // 派生子步也要有自己的 AgentDef：它真的会跑，少了它就是一条裸 step——
+    // 席位归属查不到、执行原语拿不到，而这两样都是新 runner 的入场条件。
+    const owned = [...seat.bindings.flatMap((b) => b.agentIds), ...(seat.derivedAgents ?? [])];
+    for (const agentId of owned) {
       if (hasAgentDef(agentId)) continue;
       const desc = STEP_REGISTRY.get(agentId);
       if (!desc) continue; // 绑定指向未注册 step，由 assistant-seats.test 报错

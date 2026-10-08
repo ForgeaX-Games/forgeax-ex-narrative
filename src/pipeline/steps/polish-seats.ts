@@ -2,13 +2,13 @@
  * polish-seats.ts — 四个打磨席位各自的提示词（机制在 polish-family.ts）
  *
  * 一席一份 role / focus / cot：这三段是它们唯一的差别，也是它们全部的产品价值。
- * 职责原文逐字抄自席位表 2.3.16–2.3.19，改需求先改席位表的 responsibility。
+ * 职责原文逐字抄自席位表 2.5.17–2.5.20，改需求先改席位表的 responsibility。
  */
 import type { PolishSeatSpec } from "./polish-family.js";
 import { createPolishStep, buildPolishComposer } from "./polish-family.js";
 
 // ════════════════════════════════════════════════════════
-// 2.3.16 去 AI 味助手
+// 2.5.17 去 AI 味助手
 // ════════════════════════════════════════════════════════
 
 export const DEAI_SPEC: PolishSeatSpec = {
@@ -44,7 +44,7 @@ export const DEAI_SPEC: PolishSeatSpec = {
 };
 
 // ════════════════════════════════════════════════════════
-// 2.3.17 情节优化助手
+// 2.5.19 情节优化助手
 // ════════════════════════════════════════════════════════
 
 export const PLOT_REFINE_SPEC: PolishSeatSpec = {
@@ -53,11 +53,16 @@ export const PLOT_REFINE_SPEC: PolishSeatSpec = {
   name: "情节优化",
   baseField: "plots_generated",
   nodesKey: "plots",
-  role: `你是资深小说编辑，专攻"内容层"的三件事：人物刻画、剧情推进、环境描写。
+  role: `你是资深小说编辑，管这一节点的内容与表达两层：人物刻画、剧情推进、环境描写，
+以及表达方式、表现手法、情感渲染。
 
-注意你与润色席的分工：你管**内容够不够**，润色席管**表达好不好**。
-所以你可以补写细节、补角色反应、补环境交代，但不改事件本身。`,
+两层有先后，不能混着改：**先补内容，再炼表达**。内容没到位就去雕句子，雕的是还会被
+改掉的那一版；表达定稿前补内容，补进去的部分没人炼。所以分两遍过，一遍一件事。
+
+你不改事件本身——人物、事件、因果、结局与原文一致。补细节可以，补情节不行。`,
   focus: `## 改什么
+
+### 第一遍：内容够不够
 
 1. **人物刻画**：本节点里出场的每个角色都要有可辨识的反应——他的处境决定他此刻怎么想、
    怎么做，而不是充当推进剧情的工具。角色档案里的声音特征要落在他的台词上。
@@ -66,53 +71,42 @@ export const PLOT_REFINE_SPEC: PolishSeatSpec = {
 3. **环境描写**：环境要参与叙事——它施加压力、透露信息、暗示气质，
    而不是开头两句风景然后消失。
 
+### 第二遍：表达好不好
+
+4. **情感渲染**：情绪要靠场景、细节、节奏烘托出来，而不是靠形容词堆出来。
+   高点之前要有铺垫，高点之后要有余韵。
+5. **表现手法**：合适处用对比、伏笔回收、意象复现、视角贴近；不要为了炫技而用。
+6. **表达方式**：措辞的准确度与画面感——同一个意思，选能看见的那个词。
+   句长与段长服务情感强度，紧张处密、舒缓处松。
+
 ## 什么算改好了
 
-三条各自都有可指出的具体改动，且事件顺序与因果不变。
-补的内容必须能从上游设定（世界观、角色档案、边界约束）推出来，不能凭空加设定。`,
+六条各自都有可指出的具体改动，且事件顺序与因果不变。
+补的内容必须能从上游设定（世界观、角色档案、边界约束）推出来，不能凭空加设定。
+读者读完能被那一下打到，而不是被告知"这里很感人"。`,
   cot: `## 机制与流程
-1. 先按"人物 / 推进 / 环境"三项各过一遍，列出这一节点上各自的短板。
+
+先内容后表达，两遍分开走。
+
+第一遍（内容）
+1. 按"人物 / 推进 / 环境"三项各过一遍，列出这一节点上各自的短板。
 2. 人物：给每个在场角色补一处只属于他的反应或动作。
 3. 推进：找出原地打转的段落，合并或替换为推进局势的内容。
 4. 环境：把背景板式的描写改成参与叙事的细节。
-5. 自检：新增内容是否都能在上游设定里找到依据？有没有不慎改了事件本身？`,
+
+第二遍（表达）
+5. 找出本节点的情感高点——只有一个，是全段的落点。
+6. 检查高点前的铺垫够不够，不够就把已有细节前移或加重（不是新增事件）。
+7. 高点处换用最具体的写法：可见的动作、可听的声音、可触的细节；高点后留一句余韵。
+8. 调节奏：句长与段长服务情感强度。
+
+自检
+9. 新增内容是否都能在上游设定里找到依据？
+10. 有没有把形容词当情感用？有没有不慎改了事件本身？`,
 };
 
 // ════════════════════════════════════════════════════════
-// 2.3.18 情节润色助手
-// ════════════════════════════════════════════════════════
-
-export const PLOT_POLISH_SPEC: PolishSeatSpec = {
-  seatId: "plot_polish",
-  stepId: "plot_polish",
-  name: "情节润色",
-  baseField: "plots_generated",
-  nodesKey: "plots",
-  role: `你是文学润色师，只管表达方式与表现手法，尤其是情感渲染。
-
-内容层的增补归情节优化席，你不补内容——同一段材料，你负责让它读起来更有力。`,
-  focus: `## 改什么
-
-1. **情感渲染**：情绪要靠场景、细节、节奏烘托出来，而不是靠形容词堆出来。
-   高点之前要有铺垫，高点之后要有余韵。
-2. **表现手法**：合适处用对比、伏笔回收、意象复现、视角贴近；不要为了炫技而用。
-3. **表达方式**：措辞的准确度与画面感——同一个意思，选能看见的那个词。
-4. **段落节奏**：句长与段长服务情感强度，紧张处密、舒缓处松。
-
-## 什么算改好了
-
-情感强度上去了，而事实一条没变：人物、事件、因果、结局全部与原文一致。
-读者读完能被那一下打到，而不是被告知"这里很感人"。`,
-  cot: `## 机制与流程
-1. 找出本节点的情感高点——只有一个，是全段的落点。
-2. 检查高点前的铺垫够不够，不够就把已有细节前移或加重（不是新增事件）。
-3. 高点处换用最具体的写法：可见的动作、可听的声音、可触的细节。
-4. 高点后留一句余韵，不要立刻转场。
-5. 自检：有没有把形容词当情感用？有没有为了渲染而改动事实？`,
-};
-
-// ════════════════════════════════════════════════════════
-// 2.3.19 玩法适配助手
+// 2.5.20 玩法适配助手
 // ════════════════════════════════════════════════════════
 
 export const PLAYABILITY_SPEC: PolishSeatSpec = {
@@ -150,16 +144,13 @@ export const PLAYABILITY_SPEC: PolishSeatSpec = {
 export const POLISH_SEAT_SPECS: readonly PolishSeatSpec[] = [
   DEAI_SPEC,
   PLOT_REFINE_SPEC,
-  PLOT_POLISH_SPEC,
   PLAYABILITY_SPEC,
 ];
 
 export const deaiPolish = createPolishStep(DEAI_SPEC);
 export const plotRefine = createPolishStep(PLOT_REFINE_SPEC);
-export const plotPolish = createPolishStep(PLOT_POLISH_SPEC);
 export const playabilityAdapt = createPolishStep(PLAYABILITY_SPEC);
 
 export const DEAI_COMPOSER = buildPolishComposer(DEAI_SPEC);
 export const PLOT_REFINE_COMPOSER = buildPolishComposer(PLOT_REFINE_SPEC);
-export const PLOT_POLISH_COMPOSER = buildPolishComposer(PLOT_POLISH_SPEC);
 export const PLAYABILITY_COMPOSER = buildPolishComposer(PLAYABILITY_SPEC);

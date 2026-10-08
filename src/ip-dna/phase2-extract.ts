@@ -12,6 +12,9 @@
 import type { LLMClient } from "../pipeline/runtime/llm-client.js";
 import { parseJSON } from "../pipeline/runtime/llm-client.js";
 import { loadIpDnaPrompt } from "./prompt-loader.js";
+import { plotTreeToStoryFramework, plotTreeToStructureSeat } from "./plot-tree-to-structure.js";
+import { derivePlotTopology, inferPlotNodeTypes, normalizePlotTree } from "./plot-tree-normalize.js";
+import { contentFidelityOf } from "./fidelity.js";
 import type {
   NarrativeIpDna,
   HierarchyNode,
@@ -30,6 +33,7 @@ import type {
   ExtractionLayer,
   LayeredOperators,
 } from "../types/narrative-ip-dna.js";
+import { toEndingType } from "../types/narrative-ip-dna.js";
 import type {
   NarrativeContext,
   CoreSettings,
@@ -116,16 +120,18 @@ export function aggregateTemplates(children: NarrativeTemplate[]): NarrativeTemp
  * 合并多个子单元剧情树为一棵（§4.3）——修"topology 计数与实际节点断裂"：
  *   ① 给每棵子树的节点 id 加**单元前缀**（各章都从 1.1 起编号会跨单元互撞、被去重丢弃），
  *      同步重写所有引用（prevNodes / nextNodes.to / options.leadsTo）；拼接后无碰撞、不丢节点。
- *   ② topology 按合并后的**实际节点** nodeTypes 重算（不再简单相加子 topology，杜绝 58≠12）。
+ *   ② nodeTypes 与 topology 按合并后的**连接**重算（不再简单相加子 topology，杜绝 58≠12）。
  * entry 取首棵（对齐 collectLeafIds 的 index 序）。
  */
 function mergePlotTrees(trees: PlotTree[]): PlotTree {
   const prefixed = trees.map((t, i) => prefixPlotTree(t, `u${i + 1}:`));
-  const nodes = prefixed.flatMap((t) => t.nodes);
+  const nodes = prefixed.flatMap((t) => t.nodes).map((n) => ({ ...n, nodeTypes: inferPlotNodeTypes(n) }));
   return {
     nodes,
     entryNodeId: prefixed[0]?.entryNodeId ?? nodes[0]?.id ?? "",
-    topology: recomputeTopology(nodes),
+    // 合并后的 nodeTypes 与计数一并按连接重算：跨单元拼接会改变节点的入出度
+    // （子树的结局接上了下一单元的开头），此时子树里的旧读数已经不成立。
+    topology: derivePlotTopology(nodes, prefixed[0]?.topology),
   };
 }
 
@@ -143,30 +149,6 @@ function prefixPlotTree(tree: PlotTree, prefix: string): PlotTree {
     nodes,
     entryNodeId: tree.entryNodeId ? remap(tree.entryNodeId) : (nodes[0]?.id ?? ""),
     topology: tree.topology,
-  };
-}
-
-/** 按实际节点 nodeTypes 重算拓扑（nodeCount = 节点数；各类型按命中计数；统计结局分型）。 */
-function recomputeTopology(nodes: PlotTreeNode[]): PlotTreeTopology {
-  let startCount = 0, endCount = 0, pivotCount = 0, mergeCount = 0;
-  const endingCountsByType: Partial<Record<EndingType, number>> = {};
-  for (const n of nodes) {
-    const types = n.nodeTypes ?? [];
-    if (types.includes("start")) startCount++;
-    if (types.includes("pivot")) pivotCount++;
-    if (types.includes("merge")) mergeCount++;
-    if (types.includes("end")) {
-      endCount++;
-      if (n.endingType) endingCountsByType[n.endingType] = (endingCountsByType[n.endingType] ?? 0) + 1;
-    }
-  }
-  return {
-    nodeCount: nodes.length,
-    startCount,
-    endCount,
-    pivotCount,
-    mergeCount,
-    ...(Object.keys(endingCountsByType).length > 0 ? { endingCountsByType } : {}),
   };
 }
 
@@ -696,6 +678,34 @@ export function heuristicExtractUnit(node: HierarchyNode, unitText: string): voi
   };
 }
 
+/**
+ * 结构部分的归一：有树就按树算，没树才退回模型报的数。
+ *
+ * 这是模型产出的剧情树进入系统的唯一入口，所以也是结构读数唯一该被确定的地方。从前这里
+ * 把五个计数逐个 `?? 0` 透传 —— 图就在手上，那些数不必问模型；而模型报的数与它自己连的
+ * 图不符是常事（`nodeCount` 58、节点 12 那次断裂就是这么来的）。
+ *
+ * 无 `plot_tree` 时才保留透传：那种 template 只有计数没有图，算不出来，报的数是唯一的读数。
+ */
+function normalizeStoryStructure(
+  s: Partial<NarrativeTemplate>["story_structure"],
+): NarrativeTemplate["story_structure"] {
+  if (s?.plot_tree) {
+    const plot_tree = normalizePlotTree(s.plot_tree);
+    return { topology: plot_tree.topology, plot_tree };
+  }
+  return {
+    topology: {
+      nodeCount: s?.topology?.nodeCount ?? 0,
+      startCount: s?.topology?.startCount ?? 0,
+      endCount: s?.topology?.endCount ?? 0,
+      pivotCount: s?.topology?.pivotCount ?? 0,
+      mergeCount: s?.topology?.mergeCount ?? 0,
+      ...(s?.topology?.shape ? { shape: s.topology.shape } : {}),
+    },
+  };
+}
+
 /** 补齐 template 缺省字段，保证聚合不 NPE。 */
 export function normalizeTemplate(t: Partial<NarrativeTemplate>): NarrativeTemplate {
   return {
@@ -705,16 +715,7 @@ export function normalizeTemplate(t: Partial<NarrativeTemplate>): NarrativeTempl
       item_inventory: t.worldview?.item_inventory ?? "",
     },
     characters: t.characters ?? [],
-    story_structure: {
-      topology: {
-        nodeCount: t.story_structure?.topology?.nodeCount ?? 0,
-        startCount: t.story_structure?.topology?.startCount ?? 0,
-        endCount: t.story_structure?.topology?.endCount ?? 0,
-        pivotCount: t.story_structure?.topology?.pivotCount ?? 0,
-        mergeCount: t.story_structure?.topology?.mergeCount ?? 0,
-      },
-      plot_tree: t.story_structure?.plot_tree,
-    },
+    story_structure: normalizeStoryStructure(t.story_structure),
     core_elements: {
       subject: t.core_elements?.subject ?? "",
       theme: t.core_elements?.theme ?? "",
@@ -821,24 +822,24 @@ export function mapTemplateToContext(template: NarrativeTemplate, base: Narrativ
   if (items.length > 0) ctx.item_database = items;
 
   // 故事框架（A→B，§4.3）：plot_tree → StoryFramework.framework.nodes（确定性结构转换）。
-  if (plotTree) ctx.story_framework = plotTreeToStoryFramework(plotTree);
+  // 按场聚合，不是按最小叙事单元 —— 见 plot-tree-to-structure.ts 顶部的量级说明。
+  //
+  // 不分档产出：忠实档直接当骨架用；其余档会被 story_framework 的 full 模式重新规划
+  // 覆盖，但转换是确定性的、零模型成本，而"原作分了几场"对读它的人是有用的读数。
+  if (plotTree) {
+    ctx.story_framework = plotTreeToStoryFramework(plotTree);
+    // L1/L2 的树只在忠实档一并定下来。字段在场的含义是「这棵树已经定了」（见
+    // StructureSeatSeed 的注释），所以按档决定产不产，而不是产了再让消费点忽略 ——
+    // 后者会让"在场"同时表示两件相反的事。
+    //
+    // 忠实档不注入的后果：两席各自 1:N 重新规划，原作的分叉、合流与结局分布到 L3
+    // 就不剩什么了，这正是「IP 结构被洗掉」的下半段。
+    if (contentFidelityOf(ctx) === "faithful") {
+      ctx.injected_structure_seed = plotTreeToStructureSeat(plotTree);
+    }
+  }
 
   return ctx;
-}
-
-/** plot_tree → StoryFramework（节点拓扑确定性转换，§4.3）。 */
-function plotTreeToStoryFramework(tree: PlotTree): StoryFramework {
-  const nodes: FrameworkNode[] = tree.nodes.map((n, i) => ({
-    node_id: n.id,
-    name: n.title ?? n.id,
-    narrative_function: n.nodeTypes.join("+") || "normal",
-    main_content: n.title ?? "",
-    is_branch: n.nodeTypes.includes("pivot") || undefined,
-    prev_node: n.prevNodes,
-    next_node: n.nextNodes.map((e) => e.to),
-    sequence_index: i,
-  }));
-  return { framework: { nodes } };
 }
 
 /** plot_tree → InitialOutline 的结构部分（opening/development/ending + 关键节点）。 */
@@ -847,9 +848,11 @@ function plotTreeToOutlineStructure(tree: PlotTree): {
   key_plot_points: string[];
 } {
   const titleOf = (id: string): string => tree.nodes.find((n) => n.id === id)?.title ?? id;
-  const starts = tree.nodes.filter((n) => n.nodeTypes.includes("start"));
-  const ends = tree.nodes.filter((n) => n.nodeTypes.includes("end"));
-  const pivots = tree.nodes.filter((n) => n.nodeTypes.includes("pivot"));
+  // 读度数而不读 nodeTypes。归一之后两者等价，但读度数不必先确认"这棵树归一过没有"
+  // —— 这个函数从 template 拿树，而不是所有进得来的 template 都经过同一条归一路。
+  const starts = tree.nodes.filter((n) => (n.prevNodes?.length ?? 0) === 0);
+  const ends = tree.nodes.filter((n) => (n.nextNodes?.length ?? 0) === 0);
+  const pivots = tree.nodes.filter((n) => (n.nextNodes?.length ?? 0) > 1);
   const opening = starts[0] ? titleOf(starts[0].id) : (tree.entryNodeId ? titleOf(tree.entryNodeId) : "");
   const ending = ends.map((n) => n.title ?? n.id).filter(Boolean).join("；");
   const development = pivots.map((n) => n.title ?? n.id).filter(Boolean);

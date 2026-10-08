@@ -12,7 +12,7 @@ import { useT, t as tGlobal } from "../../i18n";
 /**
  * 条目级动作：建条目、确认输入、保存配置、切断旧运行、收原料。
  *
- * 这些动作只碰 store 与单条 REST，不依赖项目清单等 owner 私有状态，因此**两个 pane 都能直接调**。
+ * 这些动作只碰 store 与单条 REST，不依赖任务清单等 owner 私有状态，因此**两个 pane 都能直接调**。
  * 需求输入面板搬到中栏后，它按下「确认」就在中栏这一侧铸条目；owner 侧靠 store.historyRevision
  * 感知磁盘变化去重拉清单，不必知道是谁改的。
  *
@@ -65,7 +65,7 @@ export function useEntryActions() {
    * 新条目成为当前选择（beginDraftEntry 已切 activeEntryKey）。
    */
   const createEntry = useCallback(
-    (previewText: string | null, inputType: "text" | "tags" | "works"): string => {
+    (previewText: string | null, inputType: "authored" | "adapted"): string => {
       const key = mintEntryKey();
       const store = useNarrativeStore.getState();
       const { userInput, tagSelections, tagCustomTexts, uploadedFiles } = store.input;
@@ -90,15 +90,13 @@ export function useEntryActions() {
           data: previewText,
         });
       }
-      // 首次确认即落盘 INPUT 参数（文本/标签的 userInput、标签选择、上传文件名）。
+      // 首次确认即落盘 INPUT 参数。标签无条件落：从前只在标签档落，于是用户勾完标签
+      // 再去写需求文本，标签整份丢掉，下一次还原 INPUT 时它就不存在了。
       void saveEntry(key, {
         inputType,
         userInput: previewText ?? userInput,
-        tags:
-          inputType === "tags"
-            ? { selections: { ...tagSelections }, customTexts: { ...tagCustomTexts } }
-            : undefined,
-        uploadedFileNames: inputType === "works" ? uploadedFiles.map((f) => f.name) : undefined,
+        tags: { selections: { ...tagSelections }, customTexts: { ...tagCustomTexts } },
+        uploadedFileNames: inputType === "adapted" ? uploadedFiles.map((f) => f.name) : undefined,
         routeGroup,
       }).then(() => useNarrativeStore.getState().bumpHistory());
       // 刚建立条目：ROUTING 尚未确认保存 → 脏态点亮「确认保存」。
@@ -108,36 +106,32 @@ export function useEntryActions() {
     [mintEntryKey, cutOffActiveRun],
   );
 
-  /** 直接输入「确定」：铸条目 + 单节点预览（时间戳落在此确定）。 */
-  const confirmText = useCallback(() => {
-    const trimmed = useNarrativeStore.getState().input.userInput.trim();
-    if (!trimmed) return;
-    createEntry(trimmed, "text");
-  }, [createEntry]);
-
-  /** 标签选择「确定」：由勾选标签合成需求文本 + 铸条目 + 单节点预览。 */
-  const confirmTags = useCallback(() => {
+  /**
+   * 「自己描述」确定：需求文本与标签六维**都**折进预览文本，铸条目 + 单节点预览。
+   *
+   * 从前分成 confirmText / confirmTags 两条，各只认一半；标签那条还把合成文本
+   * `setInput({ userInput: composed })` 写回输入框，把用户手写的需求覆盖掉。两半并存
+   * 之后不必再分流，也不必回写 —— 标签自有住所，折算只发生在提交这一次。
+   */
+  const confirmAuthored = useCallback(() => {
     const { userInput, tagSelections, tagCustomTexts } = useNarrativeStore.getState().input;
     const picked = TAG_DIMENSIONS.map((dim) => {
       const val = tagSelections[dim.key] ?? tagCustomTexts[dim.key]?.trim();
       return val ? `${t(dim.nameKey)}：${val}` : null;
     }).filter(Boolean) as string[];
-    const composed = picked.length > 0 ? picked.join("；") : userInput.trim();
+    const composed = [userInput.trim(), picked.join("；")].filter(Boolean).join("\n\n");
     if (!composed) return;
-    useNarrativeStore.getState().setInput({ userInput: composed });
-    createEntry(composed, "tags");
+    createEntry(composed, "authored");
   }, [createEntry, t]);
 
-  /** 文件上传 / IP 作品「确定」：铸条目锚定（不推预览节点，节点由 IpStageFlow 分步推送）。 */
-  const confirmWorks = useCallback((): string => createEntry(null, "works"), [createEntry]);
+  /** 「上传原作改编」确定：铸条目锚定（不推预览节点，节点由 IpStageFlow 分步推送）。 */
+  const confirmAdapted = useCallback((): string => createEntry(null, "adapted"), [createEntry]);
 
-  /** 按当前 inputTab 分流的「确认」。 */
+  /** 按当前入口分流的「确认」。 */
   const confirmInput = useCallback(() => {
-    const tab = useNarrativeStore.getState().inputTab;
-    if (tab === "tags") confirmTags();
-    else if (tab === "file") confirmWorks();
-    else confirmText();
-  }, [confirmText, confirmTags, confirmWorks]);
+    if (useNarrativeStore.getState().inputTab === "adapted") confirmAdapted();
+    else confirmAuthored();
+  }, [confirmAuthored, confirmAdapted]);
 
   /**
    * §条目持久化：「确认保存」——把当前 INPUT+ROUTING 全量快照 upsert 到 output/<key>/_entry.json，
@@ -147,22 +141,22 @@ export function useEntryActions() {
     const st = useNarrativeStore.getState();
     const key = st.activeEntryKey;
     if (!key || st.activeEntryStatus) return; // 仅未生成的条目可保存配置
-    const { routeGroup, tierChoice, narrativeRoute, genreCode, complexity, storyType, storyTheme } = st.routing;
+    const { routeGroup, tierChoice, narrativeRoute, genreCode, complexity, storyType, storyTheme,
+      narrativeStructure } = st.routing;
     const showComplexity = routeHasComplexity(routeGroup, tierChoice, narrativeRoute);
     const hasGenre = !!genreCode && routeGroup === "planning";
     await saveEntry(key, {
-      inputType: st.inputTab === "file" ? "works" : st.inputTab,
+      inputType: st.inputTab,
       userInput: st.input.userInput,
-      tags:
-        st.inputTab === "tags"
-          ? { selections: { ...st.input.tagSelections }, customTexts: { ...st.input.tagCustomTexts } }
-          : undefined,
+      // 标签无条件保存，理由同 createEntry：按档保存会在切换入口时丢掉另一半。
+      tags: { selections: { ...st.input.tagSelections }, customTexts: { ...st.input.tagCustomTexts } },
       routeGroup,
       tier: tierChoice === "auto" ? undefined : tierChoice,
       mode: narrativeRoute,
       genreCode: hasGenre ? genreCode! : undefined,
       storyType: storyType ?? undefined,
       storyTheme: storyTheme ?? undefined,
+      narrativeStructure: narrativeStructure ?? undefined,
       complexity: showComplexity ? complexity : undefined,
       ipRunKey: st.ipRunKey ?? undefined,
     });
@@ -245,9 +239,8 @@ export function useEntryActions() {
     mintEntryKey,
     cutOffActiveRun,
     createEntry,
-    confirmText,
-    confirmTags,
-    confirmWorks,
+    confirmAuthored,
+    confirmAdapted,
     confirmInput,
     saveEntryConfig,
     pushIpStageProgress,

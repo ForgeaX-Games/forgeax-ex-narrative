@@ -8,7 +8,7 @@
  * 渲染逻辑放在 src 下（它是源码、要被测试引用），脚本只负责落盘。
  * 只投影前端用得着的字段；职责原文、上游席位、落差登记留在后端。
  */
-import { ASSISTANT_SEATS, type AssistantSeat } from "./assistant-seats.js";
+import { ASSISTANT_SEATS, SEAT_KINDS, type AssistantSeat } from "./assistant-seats.js";
 import { STEP_FILE_MAP } from "../runtime/step-files.js";
 import { NARRATIVE_PIPELINES } from "./narrative-pipelines.js";
 
@@ -109,7 +109,7 @@ export function renderSeatsModule(): string {
  * 改席位请改后端注册表，然后跑 \`npm run gen:seats\`。
  */
 
-export type SeatKind = "generator" | "validator" | "polisher" | "retriever";
+export type SeatKind = ${SEAT_KINDS.map((k) => JSON.stringify(k)).join(" | ")};
 
 /**
  * 跑一条管线会不会带上这一席。
